@@ -57,12 +57,11 @@ pub fn main() !void {
     }
 
     // init inotify
-    const inotify = std.posix.inotify_init1(0); // no flags, potentially can set IN_NONBLOCK and/or IN_CLOEXEC
-
-    const inotify_fd = inotify catch {
+    const inotify_fd = std.posix.inotify_init1(0) catch {
         try stderr.print("Failed to initialize inotify\n", .{});
         return;
-    };
+    }; // no flags, potentially can set IN_NONBLOCK and/or IN_CLOEXEC
+
     defer std.posix.close(inotify_fd);
 
     logger.debug("Initialized inotify with fd {d}", .{inotify_fd});
@@ -99,11 +98,47 @@ pub fn main() !void {
         }
         wds.deinit();
     }
-}
+    if (wds.items.len == 0) {
+        try stderr.print("No files to watch. Exiting.\n", .{});
+        return;
+    }
 
-test "simple test" {
-    var list = std.ArrayList(i32).init(std.testing.allocator);
-    defer list.deinit(); // try commenting this out and see if zig detects the memory leak!
-    try list.append(42);
-    try std.testing.expectEqual(@as(i32, 42), list.pop());
+    // epic :) we initialized
+
+    // define the inotify_event struct
+    const InotifyEvent = extern struct {
+        wd: i32,
+        mask: u32,
+        cookie: u32,
+        len: u32,
+        name: [0]u8,
+    };
+
+    // main loop
+    const buffer = try allocator.alloc(u8, @sizeOf(InotifyEvent));
+    while (true) {
+        const events = std.ArrayList(InotifyEvent).init(allocator);
+        defer events.deinit();
+
+        // const defaultInotifyEvent = InotifyEvent{ .wd = 0, .mask = 0, .cookie = 0, .len = 0, .name = [_]u8{} };
+
+        const bytesRead = std.posix.read(inotify_fd, buffer) catch {
+            try stderr.print("Failed to read from inotify fd\n", .{});
+            continue;
+        };
+        if (bytesRead != @sizeOf(InotifyEvent)) {
+            try stderr.print("Read unexpected number of bytes from inotify fd\n", .{});
+        }
+
+        // parse as InotifyEvent
+        const eventList: InotifyEvent = std.mem.bytesAsValue(InotifyEvent, buffer).*;
+
+        try stdout.print("Event: {d} {d} {d} {d} {s}\n", .{
+            eventList.wd,
+            eventList.mask,
+            eventList.cookie,
+            eventList.len,
+            eventList.name,
+        });
+    }
 }
