@@ -23,7 +23,3 @@ Options:
 ```
 
 Tested with `wakatime-cli` version `1.90.0`.
-
-# Known Issues
-
-- Does not yet handle file renaming while tracking a git repo and uwaka is running.
