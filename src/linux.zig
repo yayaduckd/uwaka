@@ -4,15 +4,19 @@ const std = @import("std");
 const stderr = std.io.getStdErr().writer();
 const stdout = std.io.getStdOut().writer();
 
-const Context = struct {
+const MAX_PATH_LENGTH = 4096;
+
+pub const Context = struct {
     inotify_fd: i32,
     watchedFiles: std.AutoHashMap(i32, []const u8),
+    eventQueue: std.ArrayList(uwaka.Event),
 };
 
-pub fn initWatching(options: uwaka.Options, allocator: std.mem.Allocator) !Context {
+pub fn initWatching(options: *uwaka.Options, allocator: std.mem.Allocator) !Context {
     var context = Context{
         .inotify_fd = 0,
         .watchedFiles = std.AutoHashMap(i32, []const u8).init(allocator),
+        .eventQueue = std.ArrayList(uwaka.Event).init(allocator),
     };
 
     // init inotify
@@ -52,43 +56,96 @@ pub fn initWatching(options: uwaka.Options, allocator: std.mem.Allocator) !Conte
         try stderr.print("No files to watch\n", .{});
     }
 
+    // watch the git directory
+    const gwd = std.posix.inotify_add_watch(context.inotify_fd, options.gitRepo, std.os.linux.IN.CREATE) catch |err| {
+        try stderr.print("Failed to add watch for git directory {s}\n", .{options.gitRepo});
+        return err;
+    };
+    try context.watchedFiles.put(gwd, options.gitRepo);
+
+    context.eventQueue = std.ArrayList(uwaka.Event).init(allocator);
+
     return context;
 }
 
+pub fn deInitWatching(context: Context) void {
+    if (context.inotify_fd != 0) {
+        std.posix.close(context.inotify_fd);
+    }
+}
+
 // define the inotify_event struct
-const InotifyEvent = extern struct {
-    wd: i32,
+const inotifyEvent = struct {
+    wd: c_int,
     mask: u32,
     cookie: u32,
     len: u32,
-    name: [0]u8,
+    name: []u8,
 };
 
 fn inotifyToUwakaEvent(mask: u32) uwaka.EventType {
     switch (mask) {
         std.os.linux.IN.MODIFY => return uwaka.EventType.FileChange,
-        else => return uwaka.EventType.Unknown,
+        std.os.linux.IN.CREATE => return uwaka.EventType.FileCreate,
+        std.os.linux.IN.IGNORED => @panic("unreachable"),
+        else => {
+            uwaka.log.debug("Unknwon event with mask {}", .{mask});
+            return uwaka.EventType.Unknown;
+        },
     }
 }
 
-pub fn nextEvent(context: Context) !uwaka.Event {
+pub fn nextEvent(context: *Context, options: *uwaka.Options) !uwaka.Event {
+    if (context.eventQueue.items.len > 0) {
+        return context.eventQueue.pop();
+    }
+
+    // otherwise, read from inotify fd
     if (context.inotify_fd == 0) {
         @panic("inotify_fd not initialized\n");
     }
 
-    var buffer: [@sizeOf(InotifyEvent)]u8 = undefined;
+    var buffer = std.mem.zeroes([@sizeOf(inotifyEvent) + std.os.linux.NAME_MAX + 1]u8);
 
-    const bytesRead = try std.posix.read(context.inotify_fd, &buffer);
-
-    if (bytesRead != @sizeOf(InotifyEvent)) {
-        try stderr.print("Read unexpected number of bytes from inotify fd\n", .{});
-    }
-
-    // parse as InotifyEvent
-    const eventList: InotifyEvent = std.mem.bytesAsValue(InotifyEvent, &buffer).*;
-
-    return uwaka.Event{
-        .etype = inotifyToUwakaEvent(eventList.mask),
-        .fileName = context.watchedFiles.get(eventList.wd).?,
+    const totalBytesRead = std.posix.read(context.inotify_fd, &buffer) catch |err| {
+        try stderr.print("Failed to read from inotify fd {d}\n", .{context.inotify_fd});
+        return err;
     };
+
+    var bytesRead: usize = 0;
+    while (bytesRead < totalBytesRead) {
+        // create a new inotify event
+        var event: inotifyEvent = undefined;
+        // copy wd
+        event.wd = std.mem.bytesToValue(c_int, buffer[bytesRead .. bytesRead + @sizeOf(c_int)]);
+        bytesRead += @sizeOf(c_int);
+        // copy mask
+        event.mask = std.mem.bytesToValue(u32, buffer[bytesRead .. bytesRead + @sizeOf(u32)]);
+        bytesRead += @sizeOf(u32);
+        // copy cookie
+        event.cookie = std.mem.bytesToValue(u32, buffer[bytesRead .. bytesRead + @sizeOf(u32)]);
+        bytesRead += @sizeOf(u32);
+        // copy len
+        event.len = std.mem.bytesToValue(u32, buffer[bytesRead .. bytesRead + @sizeOf(u32)]);
+        bytesRead += @sizeOf(u32);
+        // copy name
+        event.name = buffer[bytesRead .. bytesRead + event.len];
+        bytesRead += event.len;
+
+        if (event.mask == std.os.linux.IN.IGNORED) {
+            // file name
+            const fileName = context.watchedFiles.get(event.wd).?;
+            options.explicitFiles.remove(fileName);
+            options.fileSet.remove(fileName);
+            _ = context.watchedFiles.remove(event.wd);
+            continue;
+        }
+
+        const uwakaEvent = uwaka.Event{
+            .etype = inotifyToUwakaEvent(event.mask),
+            .fileName = context.watchedFiles.get(event.wd).?,
+        };
+        try context.eventQueue.append(uwakaEvent);
+    }
+    return nextEvent(context, options);
 }

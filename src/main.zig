@@ -11,6 +11,7 @@ const Args = enum {
 };
 
 pub const Options = struct {
+    explicitFiles: std.BufSet, // list of files to watch
     fileSet: std.BufSet, // list of files to watch
     help: bool, // whether to show help
     wakatimeCliPath: []const u8, // path to wakatime-cli binary
@@ -24,6 +25,7 @@ var stderr = std.io.getStdErr().writer();
 
 fn parseArgs(allocator: std.mem.Allocator) !Options {
     var options = Options{
+        .explicitFiles = std.BufSet.init(allocator),
         .fileSet = std.BufSet.init(allocator),
         .help = false,
         .wakatimeCliPath = "",
@@ -103,6 +105,7 @@ fn parseArgs(allocator: std.mem.Allocator) !Options {
             }
         } else {
             try options.fileSet.insert(arg);
+            try options.explicitFiles.insert(arg);
         }
     }
 
@@ -123,6 +126,39 @@ fn parseArgs(allocator: std.mem.Allocator) !Options {
     }
 
     return options;
+}
+
+fn rebuildFileList(allocator: std.mem.Allocator, options: *Options, context: ?uwaka.Context) !uwaka.Context {
+
+    // clear fileset
+    options.fileSet.deinit();
+    // new hashset
+    var newFileSet = std.BufSet.init(allocator);
+
+    // add all explicitly added files
+    var explicitFileIterator = options.explicitFiles.iterator();
+    while (explicitFileIterator.next()) |file| {
+        try newFileSet.insert(file.*);
+    }
+
+    // add all files in the git repo
+    if (options.gitRepo.len > 0) {
+        const files = try uwaka.getFilesInGitRepo(options.gitRepo, allocator);
+        for (files) |file| {
+            try newFileSet.insert(file);
+        }
+    }
+
+    // re-assign the new fileset
+    options.fileSet = newFileSet;
+
+    if (context) |ctx| {
+        // clear the context
+        uwaka.deInitWatching(ctx);
+    }
+    // re-init the context
+    const ctx = try uwaka.initWatching(options, allocator);
+    return ctx;
 }
 
 fn runWakaTimeCli(filePath: []const u8, options: Options, allocator: std.mem.Allocator) !void {
@@ -177,7 +213,10 @@ fn sendHeartbeat(allocator: std.mem.Allocator, lastHeartbeat: *i64, options: Opt
     if (!isWrite and currentTime - lastHeartbeat.* < HEARTBEAT_INTERVAL) {
         return;
     }
-    try runWakaTimeCli(event.fileName, options, allocator);
+    runWakaTimeCli(event.fileName, options, allocator) catch {
+        @panic("Error running wakatime-cli binary");
+    };
+    uwaka.log.debug("Heartbeat sent for event {} on file {s}.", .{ event.etype, event.fileName });
     lastHeartbeat.* = currentTime;
 }
 
@@ -210,7 +249,7 @@ pub fn main() !void {
 
     // add watch for all files in file list
 
-    const context = try uwaka.initWatching(options, allocator);
+    var context = try uwaka.initWatching(&options, allocator);
 
     var lastEventTime = std.time.milliTimestamp();
     const DEBOUNCE_TIME = 1000; // 1 second
@@ -219,17 +258,32 @@ pub fn main() !void {
     defer allocator.destroy(lastHeartbeat);
     // main loop
     while (true) {
-        const event = try uwaka.nextEvent(context);
-        const currentTime = std.time.milliTimestamp();
-        if (currentTime - lastEventTime < DEBOUNCE_TIME) {
-            continue;
-        }
-        lastEventTime = currentTime;
+        const event = try uwaka.nextEvent(&context, &options);
 
         uwaka.log.debug("Event: {} {s}", .{
             event.etype,
             event.fileName,
         });
-        try sendHeartbeat(allocator, lastHeartbeat, options, event);
+
+        switch (event.etype) {
+            uwaka.EventType.FileChange => {
+                const currentTime = std.time.milliTimestamp();
+                if (currentTime - lastEventTime < DEBOUNCE_TIME) {
+                    uwaka.log.debug("event ignored at time {}", .{currentTime});
+                    lastEventTime = currentTime;
+                    continue;
+                }
+                lastEventTime = currentTime;
+
+                try sendHeartbeat(allocator, lastHeartbeat, options, event);
+            },
+            uwaka.EventType.FileCreate => {
+                // rebuild file list
+                context = try rebuildFileList(allocator, &options, context);
+            },
+            else => {
+                try stderr.print("Unknown event type: {}\n", .{event.etype});
+            },
+        }
     }
 }

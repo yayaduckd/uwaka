@@ -10,6 +10,7 @@ pub const log = std.log.default;
 
 pub const EventType = enum {
     FileChange,
+    FileCreate,
     Unknown,
 };
 
