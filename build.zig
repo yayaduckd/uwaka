@@ -15,8 +15,12 @@ pub fn build(b: *std.Build) void {
     // set a preferred release mode, allowing the user to decide how to optimize.
     const optimize = b.standardOptimizeOption(.{});
 
+    const architecture = @tagName(target.result.cpu.arch);
+    const os = @tagName(target.result.os.tag);
+    const executableName = std.fmt.allocPrint(b.allocator, "uwaka_{s}-{s}", .{ architecture, os }) catch unreachable;
+
     const exe = b.addExecutable(.{
-        .name = "uwaka",
+        .name = executableName,
         .root_source_file = b.path("src/main.zig"),
         .target = target,
         .optimize = optimize,
