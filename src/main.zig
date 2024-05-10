@@ -273,8 +273,14 @@ pub fn main() !void {
                     lastEventTime = currentTime;
                     continue;
                 }
-                lastEventTime = currentTime;
 
+                if (std.mem.eql(u8, event.fileName, ".gitignore")) {
+                    // rebuild file list
+                    uwaka.log.debug("Rebuilding file list due to .gitignore change", .{});
+                    context = try rebuildFileList(allocator, &options, context);
+                }
+
+                lastEventTime = currentTime;
                 try sendHeartbeat(allocator, lastHeartbeat, options, event);
             },
             uwaka.EventType.FileCreate => {
