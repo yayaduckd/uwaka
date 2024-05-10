@@ -19,6 +19,11 @@ Options:
   -w, --wakatime-cli-path  Path to wakatime-cli binary. REQUIRED.
   -e, --editor-name  Name of editor to pass to wakatime. Defaults to "uwaka".
   -r, --editor-version  Version of editor to pass to wakatime. Required if editor-name is set.
+  -g, --git-repo  Path to git repository. If set, uwaka will watch all tracked and untracked (but not ignored) files in the git repository.
 ```
 
 Tested with `wakatime-cli` version `1.90.0`.
+
+# Known Issues
+
+- Does not yet handle file renaming while tracking a git repo and uwaka is running.
