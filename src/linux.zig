@@ -5,11 +5,13 @@ const stderr = std.io.getStdErr().writer();
 const stdout = std.io.getStdOut().writer();
 
 const MAX_PATH_LENGTH = 4096;
+const MOVE_TIMEOUT: i64 = 10000; // 10 second
 
 pub const Context = struct {
     inotify_fd: i32,
     watchedFiles: std.AutoHashMap(i32, []const u8),
     eventQueue: std.ArrayList(uwaka.Event),
+    moveCookies: std.AutoHashMap(u32, i64),
 };
 
 pub fn initWatching(options: *uwaka.Options, allocator: std.mem.Allocator) !Context {
@@ -17,6 +19,7 @@ pub fn initWatching(options: *uwaka.Options, allocator: std.mem.Allocator) !Cont
         .inotify_fd = 0,
         .watchedFiles = std.AutoHashMap(i32, []const u8).init(allocator),
         .eventQueue = std.ArrayList(uwaka.Event).init(allocator),
+        .moveCookies = std.AutoHashMap(u32, i64).init(allocator),
     };
 
     // init inotify
@@ -56,8 +59,9 @@ pub fn initWatching(options: *uwaka.Options, allocator: std.mem.Allocator) !Cont
         try stderr.print("No files to watch\n", .{});
     }
 
+    const watchMask = std.os.linux.IN.MOVED_FROM | std.os.linux.IN.MOVED_TO | std.os.linux.IN.CREATE;
     // watch the git directory
-    const gwd = std.posix.inotify_add_watch(context.inotify_fd, options.gitRepo, std.os.linux.IN.CREATE) catch |err| {
+    const gwd = std.posix.inotify_add_watch(context.inotify_fd, options.gitRepo, watchMask) catch |err| {
         try stderr.print("Failed to add watch for git directory {s}\n", .{options.gitRepo});
         return err;
     };
@@ -83,13 +87,37 @@ const inotifyEvent = struct {
     name: []u8,
 };
 
-fn inotifyToUwakaEvent(mask: u32) uwaka.EventType {
-    switch (mask) {
+fn handleMove(cookie: u32, context: *Context) ?uwaka.EventType {
+    var iterator = context.moveCookies.iterator();
+    while (iterator.next()) |entry| {
+        const key = entry.key_ptr.*;
+        const value = entry.value_ptr.*;
+        if (std.time.milliTimestamp() - value > MOVE_TIMEOUT) {
+            _ = context.moveCookies.remove(key);
+        }
+    }
+
+    const moveCookie = context.moveCookies.get(cookie);
+    if (moveCookie == null) {
+        context.moveCookies.put(cookie, std.time.milliTimestamp()) catch {
+            @panic("out of memory");
+        };
+        return uwaka.EventType.FileMove;
+    } else {
+        _ = context.moveCookies.remove(cookie);
+        return null;
+    }
+}
+
+fn inotifyToUwakaEvent(event: inotifyEvent, context: *Context) ?uwaka.EventType {
+    switch (event.mask) {
         std.os.linux.IN.MODIFY => return uwaka.EventType.FileChange,
         std.os.linux.IN.CREATE => return uwaka.EventType.FileCreate,
         std.os.linux.IN.IGNORED => @panic("unreachable"),
+        std.os.linux.IN.MOVED_FROM => return handleMove(event.cookie, context),
+        std.os.linux.IN.MOVED_TO => return handleMove(event.cookie, context),
         else => {
-            uwaka.log.debug("Unknwon event with mask {}", .{mask});
+            uwaka.log.debug("Unknwon event with mask {}", .{event.mask});
             return uwaka.EventType.Unknown;
         },
     }
@@ -141,11 +169,16 @@ pub fn nextEvent(context: *Context, options: *uwaka.Options) !uwaka.Event {
             continue;
         }
 
-        const uwakaEvent = uwaka.Event{
-            .etype = inotifyToUwakaEvent(event.mask),
-            .fileName = context.watchedFiles.get(event.wd).?,
-        };
-        try context.eventQueue.append(uwakaEvent);
+        const eventType = inotifyToUwakaEvent(event, context);
+        if (eventType) |etype| {
+            const uwakaEvent = uwaka.Event{
+                .etype = etype,
+                .fileName = context.watchedFiles.get(event.wd).?,
+            };
+            try context.eventQueue.append(uwakaEvent);
+        } else {
+            continue;
+        }
     }
     return nextEvent(context, options);
 }
