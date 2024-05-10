@@ -283,7 +283,7 @@ pub fn main() !void {
                 lastEventTime = currentTime;
                 try sendHeartbeat(allocator, lastHeartbeat, options, event);
             },
-            uwaka.EventType.FileCreate, uwaka.EventType.FileMove => {
+            uwaka.EventType.FileCreate, uwaka.EventType.FileMove, uwaka.EventType.FileDelete => {
                 // rebuild file list
                 context = try rebuildFileList(allocator, &options, context);
             },

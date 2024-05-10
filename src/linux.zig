@@ -59,7 +59,7 @@ pub fn initWatching(options: *uwaka.Options, allocator: std.mem.Allocator) !Cont
         try stderr.print("No files to watch\n", .{});
     }
 
-    const watchMask = std.os.linux.IN.MOVED_FROM | std.os.linux.IN.MOVED_TO | std.os.linux.IN.CREATE;
+    const watchMask = std.os.linux.IN.MOVED_FROM | std.os.linux.IN.MOVED_TO | std.os.linux.IN.CREATE | std.os.linux.IN.DELETE;
     // watch the git directory
     const gwd = std.posix.inotify_add_watch(context.inotify_fd, options.gitRepo, watchMask) catch |err| {
         try stderr.print("Failed to add watch for git directory {s}\n", .{options.gitRepo});
@@ -113,6 +113,8 @@ fn inotifyToUwakaEvent(event: inotifyEvent, context: *Context) ?uwaka.EventType 
     switch (event.mask) {
         std.os.linux.IN.MODIFY => return uwaka.EventType.FileChange,
         std.os.linux.IN.CREATE => return uwaka.EventType.FileCreate,
+        std.os.linux.IN.DELETE => return uwaka.EventType.FileDelete,
+        std.os.linux.IN.DELETE | std.os.linux.IN.IGNORED => return uwaka.EventType.FileDelete,
         std.os.linux.IN.IGNORED => @panic("unreachable"),
         std.os.linux.IN.MOVED_FROM => return handleMove(event.cookie, context),
         std.os.linux.IN.MOVED_TO => return handleMove(event.cookie, context),
@@ -171,9 +173,13 @@ pub fn nextEvent(context: *Context, options: *uwaka.Options) !uwaka.Event {
 
         const eventType = inotifyToUwakaEvent(event, context);
         if (eventType) |etype| {
+            var fileName = context.watchedFiles.get(event.wd).?;
+            if (etype == uwaka.EventType.FileDelete) {
+                fileName = event.name;
+            }
             const uwakaEvent = uwaka.Event{
                 .etype = etype,
-                .fileName = context.watchedFiles.get(event.wd).?,
+                .fileName = fileName,
             };
             try context.eventQueue.append(uwakaEvent);
         } else {
