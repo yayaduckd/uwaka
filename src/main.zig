@@ -7,14 +7,16 @@ const Args = enum {
     wakatimeCliPath,
     editorName,
     editorVersion,
+    gitRepo,
 };
 
 pub const Options = struct {
-    fileList: std.ArrayList([]const u8), // list of files to watch
+    fileSet: std.BufSet, // list of files to watch
     help: bool, // whether to show help
     wakatimeCliPath: []const u8, // path to wakatime-cli binary
     editorName: []const u8, // name of editor to pass to wakatime
     editorVersion: []const u8, // version of editor to pass to wakatime
+    gitRepo: []const u8, // git repo to pass to wakatime
 };
 
 const stdout = std.io.getStdOut().writer();
@@ -22,11 +24,12 @@ var stderr = std.io.getStdErr().writer();
 
 fn parseArgs(allocator: std.mem.Allocator) !Options {
     var options = Options{
+        .fileSet = std.BufSet.init(allocator),
         .help = false,
-        .fileList = std.ArrayList([]const u8).init(allocator),
         .wakatimeCliPath = "",
         .editorName = "",
         .editorVersion = "",
+        .gitRepo = "",
     };
 
     var args = try std.process.argsWithAllocator(allocator);
@@ -41,6 +44,8 @@ fn parseArgs(allocator: std.mem.Allocator) !Options {
         .{ "-e", Args.editorName },
         .{ "--editor-version", Args.editorVersion },
         .{ "-r", Args.editorVersion },
+        .{ "--git-repo", Args.gitRepo },
+        .{ "-g", Args.gitRepo },
     });
 
     _ = args.next(); // skip the first arg which is the program name
@@ -83,13 +88,25 @@ fn parseArgs(allocator: std.mem.Allocator) !Options {
                         std.process.exit(0);
                     }
                 },
+                Args.gitRepo => {
+                    if (args.next()) |gitRepo| {
+                        options.gitRepo = try allocator.dupe(u8, gitRepo);
+                        const files = try uwaka.getFilesInGitRepo(options.gitRepo, allocator);
+                        for (files) |file| {
+                            try options.fileSet.insert(file);
+                        }
+                    } else {
+                        try stderr.print("Expected argument for --git-repo\n", .{});
+                        std.process.exit(0);
+                    }
+                },
             }
         } else {
-            try options.fileList.append(arg);
+            try options.fileSet.insert(arg);
         }
     }
 
-    if (options.fileList.items.len == 0) {
+    if (options.fileSet.count() == 0) {
         try stderr.print("No files to watch\n", .{});
         std.process.exit(0);
     } else if (options.wakatimeCliPath.len == 0) {
@@ -169,8 +186,8 @@ pub fn main() !void {
     const allocator = gpa.allocator();
     defer _ = gpa.deinit();
 
-    const options = try parseArgs(allocator);
-    defer options.fileList.deinit();
+    var options = try parseArgs(allocator);
+    defer options.fileSet.deinit();
 
     if (options.help) {
         const helpText =
@@ -183,6 +200,7 @@ pub fn main() !void {
             \\  -w, --wakatime-cli-path  Path to wakatime-cli binary. REQUIRED.
             \\  -e, --editor-name  Name of editor to pass to wakatime. Defaults to "uwaka".
             \\  -r, --editor-version  Version of editor to pass to wakatime. Required if editor-name is set.
+            \\  -g, --git-repo  Path to git repository. If set, will watch all tracked and untracked (but not ignored) files in the git repository.
             \\
         ;
         try stdout.print(helpText, .{});

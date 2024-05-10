@@ -25,7 +25,9 @@ pub fn initWatching(options: uwaka.Options, allocator: std.mem.Allocator) !Conte
 
     const cwd = std.fs.cwd(); // current working directory
 
-    for (options.fileList.items) |file| {
+    var iterator = options.fileSet.iterator();
+    while (iterator.next()) |filePtr| {
+        const file = filePtr.*;
         uwaka.log.debug("Processing file {s}", .{file});
         const stat = cwd.statFile(file) catch {
             try stderr.print("Failed to stat file {s}\n", .{file});

@@ -1,5 +1,6 @@
 pub usingnamespace @import("linux.zig");
 pub usingnamespace @import("main.zig");
+pub usingnamespace @import("git.zig");
 
 pub const NAME = "uwaka";
 pub const VERSION = "0.1.0";
