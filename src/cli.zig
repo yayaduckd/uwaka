@@ -2,7 +2,7 @@ const std = @import("std");
 const stdout = std.io.getStdOut().writer();
 var stderr = std.io.getStdErr().writer();
 
-const uwaka = @import("mix.zig");
+const uwa = @import("mix.zig");
 
 const Args = enum {
     help,
@@ -41,8 +41,8 @@ fn printCliError(comptime format: []const u8, args: anytype) void {
     printHelp();
 }
 
-pub fn parseArgs(allocator: std.mem.Allocator) !uwaka.Options {
-    var options = uwaka.Options{
+pub fn parseArgs(allocator: std.mem.Allocator) !uwa.Options {
+    var options = uwa.Options{
         .explicitFiles = std.BufSet.init(allocator),
         .fileSet = std.BufSet.init(allocator),
         .wakatimeCliPath = "",
@@ -108,7 +108,7 @@ pub fn parseArgs(allocator: std.mem.Allocator) !uwaka.Options {
                 Args.gitRepo => {
                     if (args.next()) |gitRepo| {
                         options.gitRepo = try allocator.dupe(u8, gitRepo);
-                        const files = try uwaka.getFilesInGitRepo(options.gitRepo, allocator);
+                        const files = try uwa.getFilesInGitRepo(options.gitRepo);
                         for (files) |file| {
                             try options.fileSet.insert(file);
                         }
@@ -132,8 +132,8 @@ pub fn parseArgs(allocator: std.mem.Allocator) !uwaka.Options {
     }
 
     if (options.editorName.len == 0) {
-        options.editorName = uwaka.NAME;
-        options.editorVersion = uwaka.VERSION;
+        options.editorName = uwa.NAME;
+        options.editorVersion = uwa.VERSION;
     }
 
     return options;

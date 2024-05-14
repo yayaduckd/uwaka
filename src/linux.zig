@@ -1,4 +1,4 @@
-const uwaka = @import("mix.zig");
+const uwa = @import("mix.zig");
 
 const std = @import("std");
 const stderr = std.io.getStdErr().writer();
@@ -10,16 +10,16 @@ const MOVE_TIMEOUT: i64 = 10000; // 10 second
 pub const Context = struct {
     inotify_fd: i32,
     watchedFiles: std.AutoHashMap(i32, []const u8),
-    eventQueue: std.ArrayList(uwaka.Event),
+    eventQueue: std.ArrayList(uwa.Event),
     moveCookies: std.AutoHashMap(u32, i64),
 };
 
-pub fn initWatching(options: *uwaka.Options, allocator: std.mem.Allocator) !Context {
+pub fn initWatching(options: *uwa.Options) !Context {
     var context = Context{
         .inotify_fd = 0,
-        .watchedFiles = std.AutoHashMap(i32, []const u8).init(allocator),
-        .eventQueue = std.ArrayList(uwaka.Event).init(allocator),
-        .moveCookies = std.AutoHashMap(u32, i64).init(allocator),
+        .watchedFiles = std.AutoHashMap(i32, []const u8).init(uwa.alloc),
+        .eventQueue = std.ArrayList(uwa.Event).init(uwa.alloc),
+        .moveCookies = std.AutoHashMap(u32, i64).init(uwa.alloc),
     };
 
     // init inotify
@@ -28,14 +28,14 @@ pub fn initWatching(options: *uwaka.Options, allocator: std.mem.Allocator) !Cont
         return e;
     }; // no flags, potentially can set IN_NONBLOCK and/or IN_CLOEXEC
 
-    uwaka.log.debug("Initialized inotify with fd {d}", .{context.inotify_fd});
+    uwa.log.debug("Initialized inotify with fd {d}", .{context.inotify_fd});
 
     const cwd = std.fs.cwd(); // current working directory
 
     var iterator = options.fileSet.iterator();
     while (iterator.next()) |filePtr| {
         const file = filePtr.*;
-        uwaka.log.debug("Processing file {s}", .{file});
+        uwa.log.debug("Processing file {s}", .{file});
         const stat = cwd.statFile(file) catch {
             try stderr.print("Failed to stat file {s}\n", .{file});
             continue;
@@ -52,7 +52,7 @@ pub fn initWatching(options: *uwaka.Options, allocator: std.mem.Allocator) !Cont
         };
         try context.watchedFiles.put(wd, file);
 
-        uwaka.log.debug("Added watch for file {s} with wd {d}", .{ file, wd });
+        uwa.log.debug("Added watch for file {s} with wd {d}", .{ file, wd });
     }
 
     if (context.watchedFiles.count() == 0) {
@@ -67,7 +67,7 @@ pub fn initWatching(options: *uwaka.Options, allocator: std.mem.Allocator) !Cont
     };
     try context.watchedFiles.put(gwd, options.gitRepo);
 
-    context.eventQueue = std.ArrayList(uwaka.Event).init(allocator);
+    context.eventQueue = std.ArrayList(uwa.Event).init(uwa.alloc);
 
     return context;
 }
@@ -87,7 +87,7 @@ const inotifyEvent = struct {
     name: []u8,
 };
 
-fn handleMove(cookie: u32, context: *Context) ?uwaka.EventType {
+fn handleMove(cookie: u32, context: *Context) ?uwa.EventType {
     var iterator = context.moveCookies.iterator();
     while (iterator.next()) |entry| {
         const key = entry.key_ptr.*;
@@ -102,30 +102,30 @@ fn handleMove(cookie: u32, context: *Context) ?uwaka.EventType {
         context.moveCookies.put(cookie, std.time.milliTimestamp()) catch {
             @panic("out of memory");
         };
-        return uwaka.EventType.FileMove;
+        return uwa.EventType.FileMove;
     } else {
         _ = context.moveCookies.remove(cookie);
         return null;
     }
 }
 
-fn inotifyToUwakaEvent(event: inotifyEvent, context: *Context) ?uwaka.EventType {
+fn inotifyToUwakaEvent(event: inotifyEvent, context: *Context) ?uwa.EventType {
     switch (event.mask) {
-        std.os.linux.IN.MODIFY => return uwaka.EventType.FileChange,
-        std.os.linux.IN.CREATE => return uwaka.EventType.FileCreate,
-        std.os.linux.IN.DELETE => return uwaka.EventType.FileDelete,
-        std.os.linux.IN.DELETE | std.os.linux.IN.IGNORED => return uwaka.EventType.FileDelete,
+        std.os.linux.IN.MODIFY => return uwa.EventType.FileChange,
+        std.os.linux.IN.CREATE => return uwa.EventType.FileCreate,
+        std.os.linux.IN.DELETE => return uwa.EventType.FileDelete,
+        std.os.linux.IN.DELETE | std.os.linux.IN.IGNORED => return uwa.EventType.FileDelete,
         std.os.linux.IN.IGNORED => @panic("unreachable"),
         std.os.linux.IN.MOVED_FROM => return handleMove(event.cookie, context),
         std.os.linux.IN.MOVED_TO => return handleMove(event.cookie, context),
         else => {
-            uwaka.log.debug("Unknwon event with mask {}", .{event.mask});
-            return uwaka.EventType.Unknown;
+            uwa.log.debug("Unknwon event with mask {}", .{event.mask});
+            return uwa.EventType.Unknown;
         },
     }
 }
 
-pub fn nextEvent(context: *Context, options: *uwaka.Options) !uwaka.Event {
+pub fn nextEvent(context: *Context, options: *uwa.Options) !uwa.Event {
     if (context.eventQueue.items.len > 0) {
         return context.eventQueue.pop();
     }
@@ -174,10 +174,10 @@ pub fn nextEvent(context: *Context, options: *uwaka.Options) !uwaka.Event {
         const eventType = inotifyToUwakaEvent(event, context);
         if (eventType) |etype| {
             var fileName = context.watchedFiles.get(event.wd).?;
-            if (etype == uwaka.EventType.FileDelete) {
+            if (etype == uwa.EventType.FileDelete) {
                 fileName = event.name;
             }
-            const uwakaEvent = uwaka.Event{
+            const uwakaEvent = uwa.Event{
                 .etype = etype,
                 .fileName = fileName,
             };

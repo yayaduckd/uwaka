@@ -1,15 +1,15 @@
-const uwaka = @import("mix.zig");
+const uwa = @import("mix.zig");
 
 const std = @import("std");
 var stderr = std.io.getStdErr().writer();
 
-pub fn getFilesInGitRepo(repoPath: []const u8, allocator: std.mem.Allocator) ![][]const u8 {
-    var files = std.ArrayList([]const u8).init(allocator);
+pub fn getFilesInGitRepo(repoPath: []const u8) ![][]const u8 {
+    var files = std.ArrayList([]const u8).init(uwa.alloc);
 
     // get tracked files
     // git ls-tree --name-only -r HEAD
     const trackedResult = std.process.Child.run(.{
-        .allocator = allocator,
+        .allocator = uwa.alloc,
         .argv = &.{ "git", "ls-tree", "--name-only", "-r", "HEAD" },
         .cwd = repoPath,
     }) catch |err| {
@@ -30,7 +30,7 @@ pub fn getFilesInGitRepo(repoPath: []const u8, allocator: std.mem.Allocator) ![]
     // get untracked files
     // find lines starting with ?? in git status --short
     const untrackedResult = std.process.Child.run(.{
-        .allocator = allocator,
+        .allocator = uwa.alloc,
         .argv = &.{ "git", "status", "--short" },
         .cwd = repoPath,
     }) catch |err| {

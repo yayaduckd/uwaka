@@ -29,3 +29,6 @@ pub const Options = struct {
     editorVersion: []const u8, // version of editor to pass to wakatime
     gitRepo: []const u8, // git repo to pass to wakatime
 };
+
+pub var gpa = std.heap.GeneralPurposeAllocator(.{}){};
+pub const alloc = gpa.allocator();
