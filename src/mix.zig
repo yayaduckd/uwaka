@@ -20,3 +20,12 @@ pub const Event = struct {
     etype: EventType,
     fileName: []const u8,
 };
+
+pub const Options = struct {
+    explicitFiles: std.BufSet, // list of files to watch
+    fileSet: std.BufSet, // list of files to watch
+    wakatimeCliPath: []const u8, // path to wakatime-cli binary
+    editorName: []const u8, // name of editor to pass to wakatime
+    editorVersion: []const u8, // version of editor to pass to wakatime
+    gitRepo: []const u8, // git repo to pass to wakatime
+};

@@ -1,134 +1,12 @@
 const std = @import("std");
 
 const uwaka = @import("mix.zig");
-
-const Args = enum {
-    help,
-    wakatimeCliPath,
-    editorName,
-    editorVersion,
-    gitRepo,
-};
-
-pub const Options = struct {
-    explicitFiles: std.BufSet, // list of files to watch
-    fileSet: std.BufSet, // list of files to watch
-    help: bool, // whether to show help
-    wakatimeCliPath: []const u8, // path to wakatime-cli binary
-    editorName: []const u8, // name of editor to pass to wakatime
-    editorVersion: []const u8, // version of editor to pass to wakatime
-    gitRepo: []const u8, // git repo to pass to wakatime
-};
+const cli = @import("cli.zig");
 
 const stdout = std.io.getStdOut().writer();
 var stderr = std.io.getStdErr().writer();
 
-fn parseArgs(allocator: std.mem.Allocator) !Options {
-    var options = Options{
-        .explicitFiles = std.BufSet.init(allocator),
-        .fileSet = std.BufSet.init(allocator),
-        .help = false,
-        .wakatimeCliPath = "",
-        .editorName = "",
-        .editorVersion = "",
-        .gitRepo = "",
-    };
-
-    var args = try std.process.argsWithAllocator(allocator);
-    defer args.deinit();
-
-    const argMap = std.ComptimeStringMap(Args, &.{
-        .{ "--help", Args.help },
-        .{ "-h", Args.help },
-        .{ "--wakatime-cli-path", Args.wakatimeCliPath },
-        .{ "-w", Args.wakatimeCliPath },
-        .{ "--editor-name", Args.editorName },
-        .{ "-e", Args.editorName },
-        .{ "--editor-version", Args.editorVersion },
-        .{ "-r", Args.editorVersion },
-        .{ "--git-repo", Args.gitRepo },
-        .{ "-g", Args.gitRepo },
-    });
-
-    _ = args.next(); // skip the first arg which is the program name
-    // All args with -- will be options, others will be files to watch
-    while (args.next()) |arg| {
-        if (argMap.get(arg)) |argEnum| {
-            switch (argEnum) {
-                Args.help => options.help = true,
-                Args.wakatimeCliPath => {
-                    if (args.next()) |wakatimeCliPath| {
-
-                        // validate that the path contains the wakatime-cli binary
-                        // test run it
-                        var process = std.process.Child.init(&.{ wakatimeCliPath, "--version" }, allocator);
-                        try stdout.print("wakatime-cli version: ", .{});
-                        _ = process.spawnAndWait() catch {
-                            try stderr.print("\rError running wakatime-cli binary {s}. Verify that the path specified is a valid binary.\n", .{wakatimeCliPath});
-                            std.process.exit(0);
-                        };
-
-                        options.wakatimeCliPath = try allocator.dupe(u8, wakatimeCliPath);
-                    } else {
-                        try stderr.print("Expected argument for --wakatime-cli-path\n", .{});
-                        std.process.exit(0);
-                    }
-                },
-                Args.editorName => {
-                    if (args.next()) |editorName| {
-                        options.editorName = try allocator.dupe(u8, editorName);
-                    } else {
-                        try stderr.print("Expected argument for --editor-name\n", .{});
-                        std.process.exit(0);
-                    }
-                },
-                Args.editorVersion => {
-                    if (args.next()) |editorVersion| {
-                        options.editorVersion = try allocator.dupe(u8, editorVersion);
-                    } else {
-                        try stderr.print("Expected argument for --editor-version\n", .{});
-                        std.process.exit(0);
-                    }
-                },
-                Args.gitRepo => {
-                    if (args.next()) |gitRepo| {
-                        options.gitRepo = try allocator.dupe(u8, gitRepo);
-                        const files = try uwaka.getFilesInGitRepo(options.gitRepo, allocator);
-                        for (files) |file| {
-                            try options.fileSet.insert(file);
-                        }
-                    } else {
-                        try stderr.print("Expected argument for --git-repo\n", .{});
-                        std.process.exit(0);
-                    }
-                },
-            }
-        } else {
-            try options.fileSet.insert(arg);
-            try options.explicitFiles.insert(arg);
-        }
-    }
-
-    if (options.fileSet.count() == 0) {
-        try stderr.print("No files to watch\n", .{});
-        std.process.exit(0);
-    } else if (options.wakatimeCliPath.len == 0) {
-        try stderr.print("\rwakatime-cli path not set.\n", .{});
-        std.process.exit(0);
-    } else if ((options.editorName.len != 0 and options.editorVersion.len == 0) or (options.editorName.len == 0 and options.editorVersion.len != 0)) {
-        try stderr.print("\rEditor version or editor name not set.\n", .{});
-        std.process.exit(0);
-    }
-
-    if (options.editorName.len == 0) {
-        options.editorName = uwaka.NAME;
-        options.editorVersion = uwaka.VERSION;
-    }
-
-    return options;
-}
-
-fn rebuildFileList(allocator: std.mem.Allocator, options: *Options, context: ?uwaka.Context) !uwaka.Context {
+fn rebuildFileList(allocator: std.mem.Allocator, options: *uwaka.Options, context: ?uwaka.Context) !uwaka.Context {
 
     // clear fileset
     options.fileSet.deinit();
@@ -161,22 +39,23 @@ fn rebuildFileList(allocator: std.mem.Allocator, options: *Options, context: ?uw
     return ctx;
 }
 
-fn runWakaTimeCli(filePath: []const u8, options: Options, allocator: std.mem.Allocator) !void {
+fn runWakaTimeCli(filePath: []const u8, options: uwaka.Options, allocator: std.mem.Allocator) !void {
     // run wakatime-cli
 
     var argumentArray = std.ArrayList([]const u8).init(allocator);
     defer argumentArray.deinit();
 
-    try argumentArray.append(options.wakatimeCliPath);
-    try argumentArray.append("--entity");
-    try argumentArray.append(filePath);
+    try argumentArray.append(options.wakatimeCliPath); // path to wakatime-cli
 
-    try argumentArray.append("--guess-language");
-    try argumentArray.append("--plugin");
+    try argumentArray.append("--entity");
+    try argumentArray.append(filePath); // pass the file to wakatime cli
+
+    try argumentArray.append("--guess-language"); // let wakatime cli guess the language
+    try argumentArray.append("--plugin"); // pass the plugin name as specified, or default values if not
     const formattedEditor = try std.fmt.allocPrint(allocator, "uwaka-universal/{s} {s}-wakatime/{s}", .{ uwaka.VERSION, options.editorName, options.editorVersion });
     try argumentArray.append(formattedEditor);
 
-    try argumentArray.append("--write");
+    try argumentArray.append("--write"); // lets wakatime cli know that this is a write event (the file was saved)
 
     var process = std.process.Child.init(argumentArray.items, allocator);
 
@@ -205,7 +84,7 @@ fn runWakaTimeCli(filePath: []const u8, options: Options, allocator: std.mem.All
 //         run wakatime-cli in background process passing it the current file
 //         update lastHeartbeat variable with current file and current time
 
-fn sendHeartbeat(allocator: std.mem.Allocator, lastHeartbeat: *i64, options: Options, event: uwaka.Event) !void {
+fn sendHeartbeat(allocator: std.mem.Allocator, lastHeartbeat: *i64, options: uwaka.Options, event: uwaka.Event) !void {
     const HEARTBEAT_INTERVAL = 1000 * 60 * 2; // 2 mins (in milliseconds)
     const currentTime = std.time.milliTimestamp();
 
@@ -225,26 +104,9 @@ pub fn main() !void {
     const allocator = gpa.allocator();
     defer _ = gpa.deinit();
 
-    var options = try parseArgs(allocator);
+    var options = try cli.parseArgs(allocator);
     defer options.fileSet.deinit();
 
-    if (options.help) {
-        const helpText =
-            \\Usage: uwaka [options] file1 file2 ...
-            \\
-            \\Specify files to track with wakatime. Will use the specified wakatime-cli binary to track the files, and the default wakatime config.
-            \\
-            \\Options:
-            \\  -h, --help  Display this help message
-            \\  -w, --wakatime-cli-path  Path to wakatime-cli binary. REQUIRED.
-            \\  -e, --editor-name  Name of editor to pass to wakatime. Defaults to "uwaka".
-            \\  -r, --editor-version  Version of editor to pass to wakatime. Required if editor-name is set.
-            \\  -g, --git-repo  Path to git repository. If set, uwaka will watch all tracked and untracked (but not ignored) files in the git repository.
-            \\
-        ;
-        try stdout.print(helpText, .{});
-        return;
-    }
     uwaka.log.debug("Wakatime cli path: {s}", .{options.wakatimeCliPath});
 
     // add watch for all files in file list
