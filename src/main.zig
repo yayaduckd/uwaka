@@ -95,7 +95,9 @@ fn sendHeartbeat(lastHeartbeat: *i64, options: uwa.Options, event: uwa.Event) !v
     runWakaTimeCli(event.fileName, options) catch {
         @panic("Error running wakatime-cli binary");
     };
-    uwa.log.debug("Heartbeat sent for event {} on file {s}.", .{ event.etype, event.fileName });
+    try stdout.print("Heartbeat sent for " ++
+        cli.TermFormat.GREEN ++ cli.TermFormat.BOLD ++ "{}" ++ cli.TermFormat.RESET ++
+        " on file {s}.\n", .{ event.etype, event.fileName });
     lastHeartbeat.* = currentTime;
 }
 

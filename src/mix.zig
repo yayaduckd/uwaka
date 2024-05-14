@@ -14,6 +14,20 @@ pub const EventType = enum {
     FileDelete,
     FileMove,
     Unknown,
+
+    pub fn format(value: EventType, comptime fmt: []const u8, options: std.fmt.FormatOptions, writer: anytype) !void {
+        _ = options;
+        _ = fmt;
+        const formatted = switch (value) {
+            EventType.FileChange => "file change event",
+            EventType.FileCreate => "file creation event",
+            EventType.FileDelete => "file deletion event",
+            EventType.FileMove => "file move event",
+            EventType.Unknown => "unknown event type",
+        };
+        try writer.writeAll(formatted);
+        return;
+    }
 };
 
 pub const Event = struct {

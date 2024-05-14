@@ -12,9 +12,20 @@ const Args = enum {
     gitRepo,
 };
 
-const TERM_RED = "\x1b[31m";
-const TERM_RESET = "\x1b[0m";
-const TERM_BOLD = "\x1b[1m";
+pub const TermFormat = struct {
+    RED: []const u8 = "\x1b[31m",
+    GREEN: []const u8 = "\x1b[32m",
+    YELLOW: []const u8 = "\x1b[33m",
+    BLUE: []const u8 = "\x1b[34m",
+    MAGENTA: []const u8 = "\x1b[35m",
+    CYAN: []const u8 = "\x1b[36m",
+    WHITE: []const u8 = "\x1b[37m",
+
+    RESET: []const u8 = "\x1b[0m",
+    BOLD: []const u8 = "\x1b[1m",
+    UNDERLINE: []const u8 = "\x1b[4m",
+    INVERT: []const u8 = "\x1b[7m",
+}{};
 
 fn printHelp() void {
     const helpText =
@@ -37,7 +48,7 @@ fn printHelp() void {
 }
 
 fn printCliError(comptime format: []const u8, args: anytype) void {
-    stderr.print("{s}{s}Error:{s} " ++ format ++ "\n", .{ TERM_BOLD, TERM_RED, TERM_RESET } ++ args) catch unreachable;
+    stderr.print("{s}{s}Error:{s} " ++ format ++ "\n", .{ TermFormat.RED, TermFormat.BOLD, TermFormat.RESET } ++ args) catch unreachable;
     printHelp();
 }
 
