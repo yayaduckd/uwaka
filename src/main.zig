@@ -3,10 +3,7 @@ const std = @import("std");
 const uwa = @import("mix.zig");
 const cli = @import("cli.zig");
 
-const stdout = std.io.getStdOut().writer();
-var stderr = std.io.getStdErr().writer();
-
-fn rebuildFileList(options: *uwa.Options, context: ?uwa.Context) !uwa.Context {
+fn rebuildFileList(options: *uwa.Options, context: ?*uwa.Context) !uwa.Context {
 
     // clear fileset
     options.fileSet.deinit();
@@ -95,9 +92,9 @@ fn sendHeartbeat(lastHeartbeat: *i64, options: uwa.Options, event: uwa.Event) !v
     runWakaTimeCli(event.fileName, options) catch {
         @panic("Error running wakatime-cli binary");
     };
-    try stdout.print("Heartbeat sent for " ++
+    uwa.log.info("Heartbeat sent for " ++
         cli.TermFormat.GREEN ++ cli.TermFormat.BOLD ++ "{}" ++ cli.TermFormat.RESET ++
-        " on file {s}.\n", .{ event.etype, event.fileName });
+        " on file {s}.", .{ event.etype, event.fileName });
     lastHeartbeat.* = currentTime;
 }
 
@@ -144,7 +141,7 @@ pub fn main() !void {
                 if (std.mem.eql(u8, event.fileName, ".gitignore")) {
                     // rebuild file list
                     uwa.log.debug("Rebuilding file list due to .gitignore change", .{});
-                    context = try rebuildFileList(&options, context);
+                    context = try rebuildFileList(&options, &context);
                 }
 
                 lastEventTime = currentTime;
@@ -152,10 +149,10 @@ pub fn main() !void {
             },
             uwa.EventType.FileCreate, uwa.EventType.FileMove, uwa.EventType.FileDelete => {
                 // rebuild file list
-                context = try rebuildFileList(&options, context);
+                context = try rebuildFileList(&options, &context);
             },
             else => {
-                try stderr.print("Unknown event type: {}\n", .{event.etype});
+                uwa.log.err("Unknown event type: {}", .{event.etype});
             },
         }
     }

@@ -1,7 +1,6 @@
 const uwa = @import("mix.zig");
 
 const std = @import("std");
-var stderr = std.io.getStdErr().writer();
 
 pub fn getFilesInGitRepo(repoPath: []const u8) ![][]const u8 {
     var files = std.ArrayList([]const u8).init(uwa.alloc);
@@ -13,7 +12,7 @@ pub fn getFilesInGitRepo(repoPath: []const u8) ![][]const u8 {
         .argv = &.{ "git", "ls-tree", "--name-only", "-r", "HEAD" },
         .cwd = repoPath,
     }) catch |err| {
-        try stderr.print("Error: unable to get tracked files in git repo.", .{});
+        uwa.log.info("Error: unable to get tracked files in git repo.", .{});
         return err;
     };
 
@@ -34,7 +33,7 @@ pub fn getFilesInGitRepo(repoPath: []const u8) ![][]const u8 {
         .argv = &.{ "git", "status", "--short" },
         .cwd = repoPath,
     }) catch |err| {
-        try stderr.print("Error: unable to get untracked files in git repo.", .{});
+        uwa.log.err("Error: unable to get untracked files in git repo.", .{});
         return err;
     };
 

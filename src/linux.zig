@@ -1,8 +1,10 @@
+// implementations of file monitoring functions using Linux's inotify API
+
 const uwa = @import("mix.zig");
 
 const std = @import("std");
-const stderr = std.io.getStdErr().writer();
-const stdout = std.io.getStdOut().writer();
+pub const stderr = std.io.getStdErr().writer();
+pub const stdout = std.io.getStdOut().writer();
 
 const MAX_PATH_LENGTH = 4096;
 const MOVE_TIMEOUT: i64 = 10000; // 10 second
@@ -72,7 +74,7 @@ pub fn initWatching(options: *uwa.Options) !Context {
     return context;
 }
 
-pub fn deInitWatching(context: Context) void {
+pub fn deInitWatching(context: *Context) void {
     if (context.inotify_fd != 0) {
         std.posix.close(context.inotify_fd);
     }
