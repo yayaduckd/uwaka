@@ -1,4 +1,4 @@
-// implementations of file monitoring functions using manual polling of last modified dates (works for most unix systems)
+// implementations of file monitoring functions using manual polling of last modified dates (works for most posix systems)
 // for a more efficient implementation, compile specific implementations for your platform
 const uwa = @import("mix.zig");
 

@@ -5,7 +5,7 @@ const osSpecificImplementation = blk: {
     if (std.mem.eql(u8, tag, "linux")) {
         break :blk @import("linux.zig");
     } else {
-        break :blk @import("unix.zig");
+        break :blk @import("posix.zig");
     }
 };
 
