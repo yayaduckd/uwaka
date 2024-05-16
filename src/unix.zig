@@ -32,20 +32,22 @@ pub fn nextEvent(context: *Context, options: *uwa.Options) !uwa.Event {
         // if a file has changed, send an event
         while (filesIter.next()) |filePtr| {
             const file = filePtr.*;
-            const stat = cwd.statFile(file) catch {
-                uwa.log.err("Error: could not stat file: {s}", .{file});
+            const stat = cwd.statFile(file) catch |err| {
+                uwa.log.err("Could not stat file: {s}. Error: {}", .{file, err});
                 continue;
             };
 
-            const lastModified = context.lastModifiedMap.get(file);
+            var lastModified = context.lastModifiedMap.get(file);
             if (lastModified == null) {
                 try context.lastModifiedMap.put(file, stat.mtime);
+				lastModified = stat.mtime;
             }
 
             if (stat.mtime != lastModified) {
                 // file has changed
                 const event = uwa.Event{ .etype = uwa.EventType.FileChange, .fileName = file };
                 try context.eventQueue.insert(0, event);
+				try context.lastModifiedMap.put(file, stat.mtime);
             }
         }
 
