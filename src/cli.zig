@@ -1,6 +1,6 @@
 const std = @import("std");
-const stdout = std.io.getStdOut().writer();
-var stderr = std.io.getStdErr().writer();
+// const stdout = std.io.getStdOut().writer();
+// var stderr = std.io.getStdErr().writer();
 
 const uwa = @import("mix.zig");
 
@@ -12,9 +12,20 @@ const Args = enum {
     gitRepo,
 };
 
-const TERM_RED = "\x1b[31m";
-const TERM_RESET = "\x1b[0m";
-const TERM_BOLD = "\x1b[1m";
+pub const TermFormat = struct {
+    RED: []const u8 = "\x1b[31m",
+    GREEN: []const u8 = "\x1b[32m",
+    YELLOW: []const u8 = "\x1b[33m",
+    BLUE: []const u8 = "\x1b[34m",
+    MAGENTA: []const u8 = "\x1b[35m",
+    CYAN: []const u8 = "\x1b[36m",
+    WHITE: []const u8 = "\x1b[37m",
+
+    RESET: []const u8 = "\x1b[0m",
+    BOLD: []const u8 = "\x1b[1m",
+    UNDERLINE: []const u8 = "\x1b[4m",
+    INVERT: []const u8 = "\x1b[7m",
+}{};
 
 fn printHelp() void {
     const helpText =
@@ -30,14 +41,12 @@ fn printHelp() void {
         \\  -g, --git-repo  Path to git repository. If set, uwaka will watch all tracked and untracked (but not ignored) files in the git repository.
         \\
     ;
-    stdout.print(helpText, .{}) catch {
-        @panic("Failed to print help text");
-    };
+    uwa.stdout.print(helpText, .{}) catch {};
     std.process.exit(0);
 }
 
 fn printCliError(comptime format: []const u8, args: anytype) void {
-    stderr.print("{s}{s}Error:{s} " ++ format ++ "\n", .{ TERM_BOLD, TERM_RED, TERM_RESET } ++ args) catch unreachable;
+    uwa.stdout.print("{s}{s}Error:{s} " ++ format, .{ TermFormat.RED, TermFormat.BOLD, TermFormat.RESET } ++ args) catch {};
     printHelp();
 }
 
@@ -81,7 +90,7 @@ pub fn parseArgs(allocator: std.mem.Allocator) !uwa.Options {
                         // validate that the path contains the wakatime-cli binary
                         // test run it
                         var process = std.process.Child.init(&.{ wakatimeCliPath, "--version" }, allocator);
-                        try stdout.print("wakatime-cli version: ", .{});
+                        try uwa.stdout.print("wakatime-cli version: ", .{});
                         _ = process.spawnAndWait() catch {
                             printCliError("\rError running wakatime-cli binary {s}. Verify that the path specified is a valid binary.\n", .{wakatimeCliPath});
                         };

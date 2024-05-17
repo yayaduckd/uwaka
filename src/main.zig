@@ -3,10 +3,7 @@ const std = @import("std");
 const uwa = @import("mix.zig");
 const cli = @import("cli.zig");
 
-const stdout = std.io.getStdOut().writer();
-var stderr = std.io.getStdErr().writer();
-
-fn rebuildFileList(options: *uwa.Options, context: ?uwa.Context) !uwa.Context {
+fn rebuildFileList(options: *uwa.Options, context: ?*uwa.Context) !uwa.Context {
 
     // clear fileset
     options.fileSet.deinit();
@@ -95,7 +92,9 @@ fn sendHeartbeat(lastHeartbeat: *i64, options: uwa.Options, event: uwa.Event) !v
     runWakaTimeCli(event.fileName, options) catch {
         @panic("Error running wakatime-cli binary");
     };
-    uwa.log.debug("Heartbeat sent for event {} on file {s}.", .{ event.etype, event.fileName });
+    try uwa.stdout.print("Heartbeat sent for " ++
+        cli.TermFormat.GREEN ++ cli.TermFormat.BOLD ++ "{}" ++ cli.TermFormat.RESET ++
+        " on file {s}.\n", .{ event.etype, event.fileName });
     lastHeartbeat.* = currentTime;
 }
 
@@ -108,6 +107,13 @@ fn shutdown(context: uwa.Context, options: uwa.Options) void {
 }
 
 pub fn main() !void {
+    // initialize writer
+    if (!std.mem.eql(u8, uwa.osTag, "linux")) {
+        uwa.stdout = std.io.getStdOut().writer();
+        uwa.stderr = std.io.getStdErr().writer();
+    }
+    uwa.log.info("Running on {s}", .{uwa.osTag});
+
     var options = try cli.parseArgs(uwa.alloc);
 
     uwa.log.debug("Wakatime cli path: {s}", .{options.wakatimeCliPath});
@@ -117,7 +123,7 @@ pub fn main() !void {
     var context = try uwa.initWatching(&options);
 
     var lastEventTime = std.time.milliTimestamp();
-    const DEBOUNCE_TIME = 1000; // 1 second
+    const DEBOUNCE_TIME = 5000; // 5 seconds
     const lastHeartbeat: *i64 = try uwa.alloc.create(i64);
     lastHeartbeat.* = std.time.milliTimestamp() - 1000 * 60 * 2; // 2 mins ago
     defer uwa.alloc.destroy(lastHeartbeat);
@@ -142,18 +148,18 @@ pub fn main() !void {
                 if (std.mem.eql(u8, event.fileName, ".gitignore")) {
                     // rebuild file list
                     uwa.log.debug("Rebuilding file list due to .gitignore change", .{});
-                    context = try rebuildFileList(&options, context);
+                    context = try rebuildFileList(&options, &context);
                 }
 
-                lastEventTime = currentTime;
                 try sendHeartbeat(lastHeartbeat, options, event);
+                lastEventTime = currentTime;
             },
             uwa.EventType.FileCreate, uwa.EventType.FileMove, uwa.EventType.FileDelete => {
                 // rebuild file list
-                context = try rebuildFileList(&options, context);
+                context = try rebuildFileList(&options, &context);
             },
             else => {
-                try stderr.print("Unknown event type: {}\n", .{event.etype});
+                uwa.log.err("Unknown event type: {}", .{event.etype});
             },
         }
     }
