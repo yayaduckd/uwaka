@@ -16,20 +16,20 @@ pub usingnamespace @import("git.zig");
 pub const NAME = "uwaka";
 pub const VERSION = "0.2.0";
 
-pub const stdout = blk: {
+pub var stdout: std.fs.File.Writer = blk: {
     const tag = @tagName(@import("builtin").os.tag);
     if (std.mem.eql(u8, tag, "linux")) {
         break :blk std.io.getStdOut().writer();
     } else {
-        break :blk null;
+        break :blk undefined;
     }
 };
-pub const stderr = blk: {
+pub var stderr: std.fs.File.Writer = blk: {
     const tag = @tagName(@import("builtin").os.tag);
     if (std.mem.eql(u8, tag, "linux")) {
         break :blk std.io.getStdErr().writer();
     } else {
-        break :blk null;
+        break :blk undefined;
     }
 };
 

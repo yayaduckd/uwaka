@@ -41,12 +41,12 @@ fn printHelp() void {
         \\  -g, --git-repo  Path to git repository. If set, uwaka will watch all tracked and untracked (but not ignored) files in the git repository.
         \\
     ;
-    uwa.log.info(helpText, .{});
+    try uwa.stdout.print(helpText, .{});
     std.process.exit(0);
 }
 
 fn printCliError(comptime format: []const u8, args: anytype) void {
-    uwa.log.info("{s}{s}Error:{s} " ++ format, .{ TermFormat.RED, TermFormat.BOLD, TermFormat.RESET } ++ args);
+    try uwa.stdout.print("{s}{s}Error:{s} " ++ format, .{ TermFormat.RED, TermFormat.BOLD, TermFormat.RESET } ++ args);
     printHelp();
 }
 

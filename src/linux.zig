@@ -3,8 +3,6 @@
 const uwa = @import("mix.zig");
 
 const std = @import("std");
-pub const stderr = std.io.getStdErr().writer();
-pub const stdout = std.io.getStdOut().writer();
 
 const MAX_PATH_LENGTH = 4096;
 const MOVE_TIMEOUT: i64 = 10000; // 10 second
@@ -26,7 +24,7 @@ pub fn initWatching(options: *uwa.Options) !Context {
 
     // init inotify
     context.inotify_fd = std.posix.inotify_init1(0) catch |e| {
-        try stderr.print("Failed to initialize inotify\n", .{});
+        try uwa.stderr.print("Failed to initialize inotify\n", .{});
         return e;
     }; // no flags, potentially can set IN_NONBLOCK and/or IN_CLOEXEC
 
@@ -39,17 +37,17 @@ pub fn initWatching(options: *uwa.Options) !Context {
         const file = filePtr.*;
         uwa.log.debug("Processing file {s}", .{file});
         const stat = cwd.statFile(file) catch {
-            try stderr.print("Failed to stat file {s}\n", .{file});
+            try uwa.stderr.print("Failed to stat file {s}\n", .{file});
             continue;
         };
 
         if (stat.kind != .file) {
-            try stderr.print("File {s} is not a regular file. Ignored.\n", .{file});
+            try uwa.stderr.print("File {s} is not a regular file. Ignored.\n", .{file});
             continue;
         }
 
         const wd = std.posix.inotify_add_watch(context.inotify_fd, file, std.os.linux.IN.MODIFY) catch {
-            try stderr.print("Failed to add watch for file {s}\n", .{file});
+            try uwa.stderr.print("Failed to add watch for file {s}\n", .{file});
             continue;
         };
         try context.watchedFiles.put(wd, file);
@@ -58,13 +56,13 @@ pub fn initWatching(options: *uwa.Options) !Context {
     }
 
     if (context.watchedFiles.count() == 0) {
-        try stderr.print("No files to watch\n", .{});
+        try uwa.stderr.print("No files to watch\n", .{});
     }
 
     const watchMask = std.os.linux.IN.MOVED_FROM | std.os.linux.IN.MOVED_TO | std.os.linux.IN.CREATE | std.os.linux.IN.DELETE;
     // watch the git directory
     const gwd = std.posix.inotify_add_watch(context.inotify_fd, options.gitRepo, watchMask) catch |err| {
-        try stderr.print("Failed to add watch for git directory {s}\n", .{options.gitRepo});
+        try uwa.stderr.print("Failed to add watch for git directory {s}\n", .{options.gitRepo});
         return err;
     };
     try context.watchedFiles.put(gwd, options.gitRepo);
@@ -140,7 +138,7 @@ pub fn nextEvent(context: *Context, options: *uwa.Options) !uwa.Event {
     var buffer = std.mem.zeroes([@sizeOf(inotifyEvent) + std.os.linux.NAME_MAX + 1]u8);
 
     const totalBytesRead = std.posix.read(context.inotify_fd, &buffer) catch |err| {
-        try stderr.print("Failed to read from inotify fd {d}\n", .{context.inotify_fd});
+        try uwa.stderr.print("Failed to read from inotify fd {d}\n", .{context.inotify_fd});
         return err;
     };
 

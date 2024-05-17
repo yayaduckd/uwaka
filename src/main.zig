@@ -107,6 +107,13 @@ fn shutdown(context: uwa.Context, options: uwa.Options) void {
 }
 
 pub fn main() !void {
+    // initialize writer
+    const tag = @tagName(@import("builtin").os.tag);
+    if (!std.mem.eql(u8, tag, "linux")) {
+        uwa.stdout = std.io.getStdOut().writer();
+        uwa.stderr = std.io.getStdErr().writer();
+    }
+
     var options = try cli.parseArgs(uwa.alloc);
 
     uwa.log.debug("Wakatime cli path: {s}", .{options.wakatimeCliPath});
