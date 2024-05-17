@@ -1,11 +1,39 @@
-pub usingnamespace @import("linux.zig");
+const std = @import("std");
+
+pub const osTag = @tagName(@import("builtin").os.tag);
+
+const osSpecificImplementation = blk: {
+    if (std.mem.eql(u8, osTag, "linux")) {
+        break :blk @import("linux.zig");
+    } else {
+        break :blk @import("posix.zig");
+    }
+};
+
+pub usingnamespace osSpecificImplementation;
 pub usingnamespace @import("main.zig");
 pub usingnamespace @import("git.zig");
 
 pub const NAME = "uwaka";
 pub const VERSION = "0.2.0";
 
-const std = @import("std");
+pub var stdout: std.fs.File.Writer = blk: {
+    const tag = @tagName(@import("builtin").os.tag);
+    if (std.mem.eql(u8, tag, "linux")) {
+        break :blk std.io.getStdOut().writer();
+    } else {
+        break :blk undefined;
+    }
+};
+pub var stderr: std.fs.File.Writer = blk: {
+    const tag = @tagName(@import("builtin").os.tag);
+    if (std.mem.eql(u8, tag, "linux")) {
+        break :blk std.io.getStdErr().writer();
+    } else {
+        break :blk undefined;
+    }
+};
+
 pub const log = std.log.default;
 
 pub const EventType = enum {
@@ -41,7 +69,7 @@ pub const Options = struct {
     wakatimeCliPath: []const u8, // path to wakatime-cli binary
     editorName: []const u8, // name of editor to pass to wakatime
     editorVersion: []const u8, // version of editor to pass to wakatime
-    gitRepo: []const u8, // git repo to pass to wakatime
+    gitRepo: []const u8, // git repo to watch
 };
 
 pub var gpa = std.heap.GeneralPurposeAllocator(.{}){};

@@ -1,52 +1,31 @@
 const uwa = @import("mix.zig");
 
 const std = @import("std");
-var stderr = std.io.getStdErr().writer();
 
 pub fn getFilesInGitRepo(repoPath: []const u8) ![][]const u8 {
+    // git ls-files --cached --others --exclude-standard $(git rev-parse --show-toplevel)
+    // possible todo: switch to using libgit2 instead of shelling out to git
     var files = std.ArrayList([]const u8).init(uwa.alloc);
 
-    // get tracked files
-    // git ls-tree --name-only -r HEAD
-    const trackedResult = std.process.Child.run(.{
+    const gitFilesResult = std.process.Child.run(.{
         .allocator = uwa.alloc,
-        .argv = &.{ "git", "ls-tree", "--name-only", "-r", "HEAD" },
+        .argv = &.{ "git", "ls-files", "--cached", "--others", "--exclude-standard" },
         .cwd = repoPath,
     }) catch |err| {
-        try stderr.print("Error: unable to get tracked files in git repo.", .{});
+        uwa.log.info("Error: unable to get files in git repo.", .{});
         return err;
     };
 
-    const trackedFiles = trackedResult.stdout;
+    const gitFiles = gitFilesResult.stdout;
+
     // split by newline
-    var lines = std.mem.split(u8, trackedFiles, "\n");
+    var lines = std.mem.split(u8, gitFiles, "\n");
     while (lines.next()) |line| {
         if (line.len == 0) {
             continue;
         }
-        try files.append(line);
-    }
-
-    // get untracked files
-    // find lines starting with ?? in git status --short
-    const untrackedResult = std.process.Child.run(.{
-        .allocator = uwa.alloc,
-        .argv = &.{ "git", "status", "--short" },
-        .cwd = repoPath,
-    }) catch |err| {
-        try stderr.print("Error: unable to get untracked files in git repo.", .{});
-        return err;
-    };
-
-    const untrackedFiles = untrackedResult.stdout;
-    var untrackedLines = std.mem.split(u8, untrackedFiles, "\n");
-    while (untrackedLines.next()) |line| {
-        if (line.len < 3) {
-            continue;
-        }
-        if (line[0] == '?' and line[1] == '?') {
-            try files.append(line[3..]);
-        }
+        const fullPath: []u8 = try std.fs.path.join(uwa.alloc, &.{ repoPath, line });
+        try files.append(fullPath);
     }
 
     return files.items;
