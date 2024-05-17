@@ -9,7 +9,7 @@ const osSpecificImplementation = blk: {
     }
 };
 
-pub usingnamespace osSpecificImplementation;
+pub usingnamespace @import("posix.zig");
 pub usingnamespace @import("main.zig");
 pub usingnamespace @import("git.zig");
 
@@ -68,7 +68,7 @@ pub const Options = struct {
     wakatimeCliPath: []const u8, // path to wakatime-cli binary
     editorName: []const u8, // name of editor to pass to wakatime
     editorVersion: []const u8, // version of editor to pass to wakatime
-    gitRepo: []const u8, // git repo to pass to wakatime
+    gitRepo: []const u8, // git repo to watch
 };
 
 pub var gpa = std.heap.GeneralPurposeAllocator(.{}){};
