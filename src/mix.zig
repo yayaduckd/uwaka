@@ -9,7 +9,7 @@ const osSpecificImplementation = blk: {
     }
 };
 
-pub usingnamespace @import("posix.zig");
+pub usingnamespace osSpecificImplementation;
 pub usingnamespace @import("main.zig");
 pub usingnamespace @import("git.zig");
 
