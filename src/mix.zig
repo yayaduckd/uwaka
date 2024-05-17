@@ -1,8 +1,9 @@
 const std = @import("std");
 
+pub const osTag = @tagName(@import("builtin").os.tag);
+
 const osSpecificImplementation = blk: {
-    const tag = @tagName(@import("builtin").os.tag);
-    if (std.mem.eql(u8, tag, "linux")) {
+    if (std.mem.eql(u8, osTag, "linux")) {
         break :blk @import("linux.zig");
     } else {
         break :blk @import("posix.zig");

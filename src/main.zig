@@ -92,9 +92,9 @@ fn sendHeartbeat(lastHeartbeat: *i64, options: uwa.Options, event: uwa.Event) !v
     runWakaTimeCli(event.fileName, options) catch {
         @panic("Error running wakatime-cli binary");
     };
-    uwa.log.info("Heartbeat sent for " ++
+    try uwa.stdout.print("Heartbeat sent for " ++
         cli.TermFormat.GREEN ++ cli.TermFormat.BOLD ++ "{}" ++ cli.TermFormat.RESET ++
-        " on file {s}.", .{ event.etype, event.fileName });
+        " on file {s}.\n", .{ event.etype, event.fileName });
     lastHeartbeat.* = currentTime;
 }
 
@@ -108,11 +108,11 @@ fn shutdown(context: uwa.Context, options: uwa.Options) void {
 
 pub fn main() !void {
     // initialize writer
-    const tag = @tagName(@import("builtin").os.tag);
-    if (!std.mem.eql(u8, tag, "linux")) {
+    if (!std.mem.eql(u8, uwa.osTag, "linux")) {
         uwa.stdout = std.io.getStdOut().writer();
         uwa.stderr = std.io.getStdErr().writer();
     }
+    uwa.log.info("Running on {s}", .{uwa.osTag});
 
     var options = try cli.parseArgs(uwa.alloc);
 
@@ -123,7 +123,7 @@ pub fn main() !void {
     var context = try uwa.initWatching(&options);
 
     var lastEventTime = std.time.milliTimestamp();
-    const DEBOUNCE_TIME = 1000; // 1 second
+    const DEBOUNCE_TIME = 5000; // 5 seconds
     const lastHeartbeat: *i64 = try uwa.alloc.create(i64);
     lastHeartbeat.* = std.time.milliTimestamp() - 1000 * 60 * 2; // 2 mins ago
     defer uwa.alloc.destroy(lastHeartbeat);
@@ -151,8 +151,8 @@ pub fn main() !void {
                     context = try rebuildFileList(&options, &context);
                 }
 
-                lastEventTime = currentTime;
                 try sendHeartbeat(lastHeartbeat, options, event);
+                lastEventTime = currentTime;
             },
             uwa.EventType.FileCreate, uwa.EventType.FileMove, uwa.EventType.FileDelete => {
                 // rebuild file list

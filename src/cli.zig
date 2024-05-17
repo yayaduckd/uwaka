@@ -41,12 +41,12 @@ fn printHelp() void {
         \\  -g, --git-repo  Path to git repository. If set, uwaka will watch all tracked and untracked (but not ignored) files in the git repository.
         \\
     ;
-    try uwa.stdout.print(helpText, .{});
+    uwa.stdout.print(helpText, .{}) catch {};
     std.process.exit(0);
 }
 
 fn printCliError(comptime format: []const u8, args: anytype) void {
-    try uwa.stdout.print("{s}{s}Error:{s} " ++ format, .{ TermFormat.RED, TermFormat.BOLD, TermFormat.RESET } ++ args);
+    uwa.stdout.print("{s}{s}Error:{s} " ++ format, .{ TermFormat.RED, TermFormat.BOLD, TermFormat.RESET } ++ args) catch {};
     printHelp();
 }
 
@@ -90,7 +90,7 @@ pub fn parseArgs(allocator: std.mem.Allocator) !uwa.Options {
                         // validate that the path contains the wakatime-cli binary
                         // test run it
                         var process = std.process.Child.init(&.{ wakatimeCliPath, "--version" }, allocator);
-                        uwa.log.info("wakatime-cli version: ", .{});
+                        try uwa.stdout.print("wakatime-cli version: ", .{});
                         _ = process.spawnAndWait() catch {
                             printCliError("\rError running wakatime-cli binary {s}. Verify that the path specified is a valid binary.\n", .{wakatimeCliPath});
                         };
