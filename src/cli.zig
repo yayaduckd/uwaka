@@ -117,11 +117,12 @@ pub fn parseArgs(allocator: std.mem.Allocator) !uwa.Options {
                 Args.gitRepo => {
                     if (args.next()) |gitRepo| {
                         options.gitRepo = gitRepo;
-                        const files = try uwa.getFilesInGitRepo(options.gitRepo);
-                        for (files) |file| {
-                            try options.fileSet.insert(file);
-                            uwa.alloc.free(file);
+                        var gitSet = try uwa.getFilesInGitRepo(options.gitRepo);
+                        var iter = gitSet.iterator();
+                        while (iter.next()) |file| {
+                            try options.fileSet.insert(file.*);
                         }
+                        gitSet.deinit();
                     } else {
                         printCliError("Expected argument for {s}\n", .{arg});
                     }

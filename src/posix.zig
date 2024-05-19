@@ -7,34 +7,32 @@ const std = @import("std");
 pub const Context = struct {
     eventQueue: std.ArrayList(uwa.Event),
     lastModifiedMap: std.StringHashMap(i128),
-    gitRepoFiles: std.ArrayList([]const u8),
+    gitRepoFiles: std.BufSet,
 };
 
 pub fn initWatching(options: *uwa.Options) !Context {
-    const gitRepoFiles = try uwa.getFilesInGitRepo(options.gitRepo);
-    var gitRepoFilesList = std.ArrayList([]const u8).init(uwa.alloc);
-    for (gitRepoFiles) |file| {
-        try gitRepoFilesList.append(file);
-    }
     // create the context
     return Context{
         .eventQueue = std.ArrayList(uwa.Event).init(uwa.alloc),
         .lastModifiedMap = std.StringHashMap(i128).init(uwa.alloc),
-        .gitRepoFiles = gitRepoFilesList,
+        .gitRepoFiles = try uwa.getFilesInGitRepo(options.gitRepo),
     };
 }
 
 pub fn deInitWatching(context: *Context) void {
+    context.gitRepoFiles.deinit();
     context.eventQueue.deinit();
     context.lastModifiedMap.deinit();
 }
 
-fn findNewStrings(old: [][]const u8, new: [][]const u8) [][]const u8 {
+fn findNewStrings(old: *std.BufSet, new: [][]const u8) [][]const u8 {
     var newStrings = std.ArrayList([]const u8).init(uwa.alloc);
+    defer newStrings.deinit();
     for (new) |str| {
         var found = false;
-        for (old) |str2| {
-            if (std.mem.eql(u8, str, str2)) {
+        var iter = old.iterator();
+        while (iter.next()) |str2| {
+            if (std.mem.eql(u8, str, str2.*)) {
                 found = true;
             }
         }
@@ -44,7 +42,9 @@ fn findNewStrings(old: [][]const u8, new: [][]const u8) [][]const u8 {
             };
         }
     }
-    return newStrings.items;
+    return newStrings.toOwnedSlice() catch {
+        @panic("oom");
+    };
 }
 
 pub fn nextEvent(context: *Context, options: *uwa.Options) !uwa.Event {
@@ -59,10 +59,11 @@ pub fn nextEvent(context: *Context, options: *uwa.Options) !uwa.Event {
             const file = filePtr.*;
             const stat = cwd.statFile(file) catch {
                 var i: usize = 0;
+                var iter = context.gitRepoFiles.iterator();
                 // remove the file from the git repo files
-                for (context.gitRepoFiles.items) |gitFile| {
-                    if (std.mem.eql(u8, gitFile, file)) {
-                        _ = context.gitRepoFiles.swapRemove(i);
+                while (iter.next()) |gitFile| {
+                    if (std.mem.eql(u8, gitFile.*, file)) {
+                        _ = context.gitRepoFiles.remove(file);
                         break;
                     }
                     i += 1;
@@ -90,11 +91,15 @@ pub fn nextEvent(context: *Context, options: *uwa.Options) !uwa.Event {
 
         if (numIter >= 5) {
             // check for new files in repo
-            const newFiles = findNewStrings(context.gitRepoFiles.items, try uwa.getFilesInGitRepo(options.gitRepo));
-            for (newFiles) |file| {
-                const event = uwa.Event{ .etype = uwa.EventType.FileCreate, .fileName = file };
+            const newFiles = try uwa.getFilesInGitRepo(options.gitRepo);
+            var iter = newFiles.iterator();
+            while (iter.next()) |file| {
+                if (context.gitRepoFiles.contains(file.*)) {
+                    continue;
+                }
+                const event = uwa.Event{ .etype = uwa.EventType.FileCreate, .fileName = file.* };
                 try context.eventQueue.insert(0, event);
-                try context.gitRepoFiles.append(file);
+                try context.gitRepoFiles.insert(file.*);
             }
             numIter = 0;
         }

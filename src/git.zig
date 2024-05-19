@@ -2,11 +2,10 @@ const uwa = @import("mix.zig");
 
 const std = @import("std");
 
-pub fn getFilesInGitRepo(repoPath: []const u8) ![][]const u8 {
-    // git ls-files --cached --others --exclude-standard $(git rev-parse --show-toplevel)
+pub fn getFilesInGitRepo(repoPath: []const u8) !std.BufSet {
+    // git ls-files --cached --others --exclude-standard
     // possible todo: switch to using libgit2 instead of shelling out to git
-    var files = std.ArrayList([]const u8).init(uwa.alloc);
-    defer files.deinit();
+    var files = std.BufSet.init(uwa.alloc);
 
     const gitFilesResult = std.process.Child.run(.{
         .allocator = uwa.alloc,
@@ -26,8 +25,9 @@ pub fn getFilesInGitRepo(repoPath: []const u8) ![][]const u8 {
             continue;
         }
         const fullPath: []u8 = try std.fs.path.join(uwa.alloc, &.{ repoPath, line });
-        try files.append(fullPath);
+        try files.insert(fullPath);
+        uwa.alloc.free(fullPath);
     }
 
-    return files.toOwnedSlice();
+    return files;
 }

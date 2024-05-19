@@ -7,22 +7,16 @@ fn rebuildFileList(options: *uwa.Options, context: ?*uwa.Context) !uwa.Context {
 
     // clear fileset
     options.fileSet.deinit();
-    // new hashset
-    options.fileSet = std.BufSet.init(uwa.alloc);
+
+    // add all files in the git repo
+    if (options.gitRepo.len > 0) {
+        options.fileSet = try uwa.getFilesInGitRepo(options.gitRepo);
+    }
 
     // add all explicitly added files
     var explicitFileIterator = options.explicitFiles.iterator();
     while (explicitFileIterator.next()) |file| {
         try options.fileSet.insert(file.*);
-    }
-
-    // add all files in the git repo
-    if (options.gitRepo.len > 0) {
-        const files = try uwa.getFilesInGitRepo(options.gitRepo);
-        for (files) |file| {
-            try options.fileSet.insert(file);
-            uwa.alloc.free(file);
-        }
     }
 
     if (context) |ctx| {
