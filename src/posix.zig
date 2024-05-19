@@ -26,6 +26,9 @@ pub fn deInitWatching(context: *Context) void {
 }
 
 pub fn nextEvent(context: *Context, options: *uwa.Options) !uwa.Event {
+    if (context.eventQueue.items.len > 0) {
+        return context.eventQueue.pop();
+    }
     const cwd = std.fs.cwd(); // current working directory
     var numIter: usize = 0;
     while (true) {
@@ -75,9 +78,12 @@ pub fn nextEvent(context: *Context, options: *uwa.Options) !uwa.Event {
                 if (context.gitRepoFiles.contains(file.*)) {
                     continue;
                 }
-                const event = uwa.Event{ .etype = uwa.EventType.FileCreate, .fileName = file.* };
-                try context.eventQueue.insert(0, event);
                 try context.gitRepoFiles.insert(file.*);
+                const event = uwa.Event{
+                    .etype = uwa.EventType.FileCreate,
+                    .fileName = context.gitRepoFiles.hash_map.getEntry(file.*).?.key_ptr.*,
+                };
+                try context.eventQueue.insert(0, event);
             }
             newFiles.deinit();
             numIter = 0;
