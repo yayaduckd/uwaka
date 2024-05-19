@@ -148,7 +148,6 @@ pub fn main() !void {
                 if (sent) {
                     lastHeartbeat = currentTime;
                 }
-                shutdown(&context, &options);
                 lastEventTime = currentTime;
             },
             uwa.EventType.FileCreate, uwa.EventType.FileMove, uwa.EventType.FileDelete => {
