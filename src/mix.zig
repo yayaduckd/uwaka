@@ -16,7 +16,7 @@ pub usingnamespace @import("main.zig");
 pub usingnamespace @import("git.zig");
 
 pub const NAME = "uwaka";
-pub const VERSION = "0.2.0";
+pub const VERSION = "0.3.1";
 
 pub var stdout: std.fs.File.Writer = blk: {
     const tag = @tagName(@import("builtin").os.tag);
