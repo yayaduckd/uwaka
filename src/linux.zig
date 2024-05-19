@@ -77,11 +77,6 @@ pub fn deInitWatching(context: *Context) void {
         std.posix.close(context.inotify_fd);
     }
     context.eventQueue.deinit();
-
-    // var wfIter = context.watchedFiles.valueIterator();
-    // while (wfIter.next()) |value| {
-    //     uwa.alloc.free(value.*);
-    // }
     context.watchedFiles.deinit();
     context.moveCookies.deinit();
 }

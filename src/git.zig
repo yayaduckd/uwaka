@@ -15,6 +15,8 @@ pub fn getFilesInGitRepo(repoPath: []const u8) !std.BufSet {
         uwa.log.info("Error: unable to get files in git repo.", .{});
         return err;
     };
+    defer uwa.alloc.free(gitFilesResult.stdout);
+    defer uwa.alloc.free(gitFilesResult.stderr);
 
     const gitFiles = gitFilesResult.stdout;
 

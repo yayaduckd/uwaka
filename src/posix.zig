@@ -25,28 +25,6 @@ pub fn deInitWatching(context: *Context) void {
     context.lastModifiedMap.deinit();
 }
 
-fn findNewStrings(old: *std.BufSet, new: [][]const u8) [][]const u8 {
-    var newStrings = std.ArrayList([]const u8).init(uwa.alloc);
-    defer newStrings.deinit();
-    for (new) |str| {
-        var found = false;
-        var iter = old.iterator();
-        while (iter.next()) |str2| {
-            if (std.mem.eql(u8, str, str2.*)) {
-                found = true;
-            }
-        }
-        if (!found) {
-            newStrings.append(str) catch {
-                @panic("oom");
-            };
-        }
-    }
-    return newStrings.toOwnedSlice() catch {
-        @panic("oom");
-    };
-}
-
 pub fn nextEvent(context: *Context, options: *uwa.Options) !uwa.Event {
     const cwd = std.fs.cwd(); // current working directory
     var numIter: usize = 0;
@@ -91,7 +69,7 @@ pub fn nextEvent(context: *Context, options: *uwa.Options) !uwa.Event {
 
         if (numIter >= 5) {
             // check for new files in repo
-            const newFiles = try uwa.getFilesInGitRepo(options.gitRepo);
+            var newFiles = try uwa.getFilesInGitRepo(options.gitRepo);
             var iter = newFiles.iterator();
             while (iter.next()) |file| {
                 if (context.gitRepoFiles.contains(file.*)) {
@@ -101,6 +79,7 @@ pub fn nextEvent(context: *Context, options: *uwa.Options) !uwa.Event {
                 try context.eventQueue.insert(0, event);
                 try context.gitRepoFiles.insert(file.*);
             }
+            newFiles.deinit();
             numIter = 0;
         }
 

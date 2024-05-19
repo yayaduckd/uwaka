@@ -74,13 +74,14 @@ fn runWakaTimeCli(filePath: []const u8, options: uwa.Options) !void {
 //         run wakatime-cli in background process passing it the current file
 //         update lastHeartbeat variable with current file and current time
 
-fn sendHeartbeat(lastHeartbeat: *i64, options: uwa.Options, event: uwa.Event) !void {
+// returns true if a heartbeat was sent, false otherwise
+fn sendHeartbeat(lastHeartbeat: i64, options: uwa.Options, event: uwa.Event) !bool {
     const HEARTBEAT_INTERVAL = 1000 * 60 * 2; // 2 mins (in milliseconds)
     const currentTime = std.time.milliTimestamp();
 
     const isWrite = event.etype == uwa.EventType.FileChange;
-    if (!isWrite and currentTime - lastHeartbeat.* < HEARTBEAT_INTERVAL) {
-        return;
+    if (!isWrite and currentTime - lastHeartbeat < HEARTBEAT_INTERVAL) {
+        return false;
     }
     runWakaTimeCli(event.fileName, options) catch {
         @panic("Error running wakatime-cli binary");
@@ -88,7 +89,7 @@ fn sendHeartbeat(lastHeartbeat: *i64, options: uwa.Options, event: uwa.Event) !v
     try uwa.stdout.print("Heartbeat sent for " ++
         cli.TermFormat.GREEN ++ cli.TermFormat.BOLD ++ "{}" ++ cli.TermFormat.RESET ++
         " on file {s}.\n", .{ event.etype, event.fileName });
-    lastHeartbeat.* = currentTime;
+    return true;
 }
 
 fn shutdown(context: *uwa.Context, options: *uwa.Options) void {
@@ -118,9 +119,7 @@ pub fn main() !void {
 
     var lastEventTime = std.time.milliTimestamp();
     const DEBOUNCE_TIME = 5000; // 5 seconds
-    const lastHeartbeat: *i64 = try uwa.alloc.create(i64);
-    lastHeartbeat.* = std.time.milliTimestamp() - 1000 * 60 * 2; // 2 mins ago
-    defer uwa.alloc.destroy(lastHeartbeat);
+    var lastHeartbeat: i64 = std.time.milliTimestamp() - 1000 * 60 * 2; // 2 mins ago
     // main loop
     while (true) {
         const event = try uwa.nextEvent(&context, &options);
@@ -145,8 +144,11 @@ pub fn main() !void {
                     context = try rebuildFileList(&options, &context);
                 }
 
+                const sent = try sendHeartbeat(lastHeartbeat, options, event);
+                if (sent) {
+                    lastHeartbeat = currentTime;
+                }
                 shutdown(&context, &options);
-                try sendHeartbeat(lastHeartbeat, options, event);
                 lastEventTime = currentTime;
             },
             uwa.EventType.FileCreate, uwa.EventType.FileMove, uwa.EventType.FileDelete => {
