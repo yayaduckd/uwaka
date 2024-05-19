@@ -76,6 +76,14 @@ pub fn deInitWatching(context: *Context) void {
     if (context.inotify_fd != 0) {
         std.posix.close(context.inotify_fd);
     }
+    context.eventQueue.deinit();
+
+    // var wfIter = context.watchedFiles.valueIterator();
+    // while (wfIter.next()) |value| {
+    //     uwa.alloc.free(value.*);
+    // }
+    context.watchedFiles.deinit();
+    context.moveCookies.deinit();
 }
 
 // define the inotify_event struct

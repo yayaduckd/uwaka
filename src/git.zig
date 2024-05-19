@@ -6,6 +6,7 @@ pub fn getFilesInGitRepo(repoPath: []const u8) ![][]const u8 {
     // git ls-files --cached --others --exclude-standard $(git rev-parse --show-toplevel)
     // possible todo: switch to using libgit2 instead of shelling out to git
     var files = std.ArrayList([]const u8).init(uwa.alloc);
+    defer files.deinit();
 
     const gitFilesResult = std.process.Child.run(.{
         .allocator = uwa.alloc,
@@ -28,5 +29,5 @@ pub fn getFilesInGitRepo(repoPath: []const u8) ![][]const u8 {
         try files.append(fullPath);
     }
 
-    return files.items;
+    return files.toOwnedSlice();
 }

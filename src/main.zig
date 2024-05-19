@@ -8,24 +8,22 @@ fn rebuildFileList(options: *uwa.Options, context: ?*uwa.Context) !uwa.Context {
     // clear fileset
     options.fileSet.deinit();
     // new hashset
-    var newFileSet = std.BufSet.init(uwa.alloc);
+    options.fileSet = std.BufSet.init(uwa.alloc);
 
     // add all explicitly added files
     var explicitFileIterator = options.explicitFiles.iterator();
     while (explicitFileIterator.next()) |file| {
-        try newFileSet.insert(file.*);
+        try options.fileSet.insert(file.*);
     }
 
     // add all files in the git repo
     if (options.gitRepo.len > 0) {
         const files = try uwa.getFilesInGitRepo(options.gitRepo);
         for (files) |file| {
-            try newFileSet.insert(file);
+            try options.fileSet.insert(file);
+            uwa.alloc.free(file);
         }
     }
-
-    // re-assign the new fileset
-    options.fileSet = newFileSet;
 
     if (context) |ctx| {
         // clear the context
@@ -51,6 +49,7 @@ fn runWakaTimeCli(filePath: []const u8, options: uwa.Options) !void {
     try argumentArray.append("--plugin"); // pass the plugin name as specified, or default values if not
     const formattedEditor = try std.fmt.allocPrint(uwa.alloc, "uwaka-universal/{s} {s}-wakatime/{s}", .{ uwa.VERSION, options.editorName, options.editorVersion });
     try argumentArray.append(formattedEditor);
+    defer uwa.alloc.free(formattedEditor);
 
     try argumentArray.append("--write"); // lets wakatime cli know that this is a write event (the file was saved)
 
@@ -98,12 +97,13 @@ fn sendHeartbeat(lastHeartbeat: *i64, options: uwa.Options, event: uwa.Event) !v
     lastHeartbeat.* = currentTime;
 }
 
-fn shutdown(context: uwa.Context, options: uwa.Options) void {
+fn shutdown(context: *uwa.Context, options: *uwa.Options) void {
     uwa.deInitWatching(context);
-    defer options.fileSet.deinit();
+    options.fileSet.deinit();
 
     // deinit allocator
-    uwa.gpa.deinit();
+    _ = uwa.gpa.deinit();
+    std.process.exit(0);
 }
 
 pub fn main() !void {
