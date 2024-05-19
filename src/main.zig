@@ -95,6 +95,13 @@ fn sendHeartbeat(lastHeartbeat: i64, options: uwa.Options, event: uwa.Event) !bo
 fn shutdown(context: *uwa.Context, options: *uwa.Options) void {
     uwa.deInitWatching(context);
     options.fileSet.deinit();
+    options.explicitFiles.deinit();
+    uwa.alloc.free(options.editorName);
+    uwa.alloc.free(options.editorVersion);
+    uwa.alloc.free(options.wakatimeCliPath);
+    if (options.gitRepo) |path| {
+        uwa.alloc.free(path);
+    }
 
     // deinit allocator
     _ = uwa.gpa.deinit();
@@ -116,7 +123,7 @@ pub fn main() !void {
     // add watch for all files in file list
 
     var context = try uwa.initWatching(&options);
-
+    shutdown(&context, &options);
     var lastEventTime = std.time.milliTimestamp();
     const DEBOUNCE_TIME = 5000; // 5 seconds
     var lastHeartbeat: i64 = std.time.milliTimestamp() - 1000 * 60 * 2; // 2 mins ago

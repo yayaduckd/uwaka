@@ -60,7 +60,9 @@ pub fn parseArgs(allocator: std.mem.Allocator) !uwa.Options {
         .gitRepo = null,
     };
 
-    var args = try std.process.argsWithAllocator(allocator);
+    var arena = std.heap.ArenaAllocator.init(uwa.alloc);
+    defer arena.deinit();
+    var args = try std.process.argsWithAllocator(arena.allocator());
     defer args.deinit();
 
     const argMap = std.ComptimeStringMap(Args, &.{
@@ -76,7 +78,7 @@ pub fn parseArgs(allocator: std.mem.Allocator) !uwa.Options {
         .{ "-g", Args.gitRepo },
     });
 
-    _ = args.next(); // skip the first arg which is the program name
+    _ = args.skip(); // skip the first arg which is the program name
     // All args with -- will be options, others will be files to watch
     while (args.next()) |arg| {
         if (argMap.get(arg)) |argEnum| {
