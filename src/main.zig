@@ -151,6 +151,7 @@ pub fn main() !void {
                     context = try rebuildFileList(&options, &context);
                 }
 
+                shutdown(&context, &options);
                 try sendHeartbeat(lastHeartbeat, options, event);
                 lastEventTime = currentTime;
             },

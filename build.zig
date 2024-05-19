@@ -10,13 +10,36 @@ pub fn build(b: *std.Build) void {
     // for restricting supported target set are available.
     const target = b.standardTargetOptions(.{});
 
+    const architecture = @tagName(target.result.cpu.arch);
+    const os = @tagName(target.result.os.tag);
+
+    var options = b.addOptions();
+
+    const WatchSystem = enum {
+        inotify,
+        posix,
+    };
+
+    const watchSystemOverride = b.option(WatchSystem, "watch_system", "Specify what backend uwaka should use to monitor files for changes.");
+
+    if (watchSystemOverride) |ws| {
+        switch (ws) {
+            WatchSystem.inotify => options.addOption(WatchSystem, "watch_system", ws),
+            WatchSystem.posix => options.addOption(WatchSystem, "watch_system", ws),
+        }
+    } else {
+        if (std.mem.eql(u8, os, "linux")) {
+            options.addOption(WatchSystem, "watch_system", WatchSystem.inotify);
+        } else {
+            options.addOption(WatchSystem, "watch_system", WatchSystem.posix);
+        }
+    }
+
     // Standard optimization options allow the person running `zig build` to select
     // between Debug, ReleaseSafe, ReleaseFast, and ReleaseSmall. Here we do not
     // set a preferred release mode, allowing the user to decide how to optimize.
     const optimize = b.standardOptimizeOption(.{});
 
-    const architecture = @tagName(target.result.cpu.arch);
-    const os = @tagName(target.result.os.tag);
     const executableName = std.fmt.allocPrint(b.allocator, "uwaka_{s}-{s}", .{ architecture, os }) catch unreachable;
 
     const exe = b.addExecutable(.{
@@ -25,6 +48,7 @@ pub fn build(b: *std.Build) void {
         .target = target,
         .optimize = optimize,
     });
+    exe.root_module.addOptions("build_options", options);
 
     // This declares intent for the executable to be installed into the
     // standard location when the user invokes the "install" step (the default

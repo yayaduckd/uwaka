@@ -1,12 +1,13 @@
 const std = @import("std");
+const buildOptions = @import("build_options");
 
 pub const osTag = @tagName(@import("builtin").os.tag);
 
 const osSpecificImplementation = blk: {
-    if (std.mem.eql(u8, osTag, "linux")) {
-        break :blk @import("linux.zig");
-    } else {
-        break :blk @import("posix.zig");
+    const ws = buildOptions.@"build.build.WatchSystem";
+    switch (buildOptions.watch_system) {
+        ws.inotify => break :blk @import("linux.zig"),
+        ws.posix => break :blk @import("posix.zig"),
     }
 };
 
