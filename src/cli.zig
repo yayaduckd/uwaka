@@ -86,13 +86,16 @@ pub fn parseArgs(allocator: std.mem.Allocator) !uwa.Options {
                 },
                 Args.wakatimeCliPath => {
                     if (args.next()) |wakatimeCliPath| {
+                        if (options.wakatimeCliPath.len != 0) {
+                            printCliError("Wakatime cli path specified multiple times. Make up your mind!\n", .{});
+                        }
 
                         // validate that the path contains the wakatime-cli binary
                         // test run it
                         var process = std.process.Child.init(&.{ wakatimeCliPath, "--version" }, allocator);
                         try uwa.stdout.print("wakatime-cli version: ", .{});
                         _ = process.spawnAndWait() catch {
-                            printCliError("\rError running wakatime-cli binary {s}. Verify that the path specified is a valid binary.\n", .{wakatimeCliPath});
+                            printCliError("Error running wakatime-cli binary {s}. Verify that the path specified is a valid binary.\n", .{wakatimeCliPath});
                         };
 
                         options.wakatimeCliPath = try uwa.alloc.dupe(u8, wakatimeCliPath);
@@ -101,6 +104,10 @@ pub fn parseArgs(allocator: std.mem.Allocator) !uwa.Options {
                     }
                 },
                 Args.editorName => {
+                    if (options.editorName.len != 0) {
+                        printCliError("Editor name specified multiple times. Make up your mind!\n", .{});
+                    }
+
                     if (args.next()) |editorName| {
                         options.editorName = try uwa.alloc.dupe(u8, editorName);
                     } else {
@@ -108,6 +115,10 @@ pub fn parseArgs(allocator: std.mem.Allocator) !uwa.Options {
                     }
                 },
                 Args.editorVersion => {
+                    if (options.editorVersion.len != 0) {
+                        printCliError("Editor version specified multiple times. Make up your mind!\n", .{});
+                    }
+
                     if (args.next()) |editorVersion| {
                         options.editorVersion = try uwa.alloc.dupe(u8, editorVersion);
                     } else {
@@ -115,6 +126,10 @@ pub fn parseArgs(allocator: std.mem.Allocator) !uwa.Options {
                     }
                 },
                 Args.gitRepo => {
+                    if (options.gitRepo != null) {
+                        printCliError("Git repo specified multiple times. Make up your mind!\n", .{});
+                    }
+
                     if (args.next()) |gitRepo| {
                         options.gitRepo = try uwa.alloc.dupe(u8, gitRepo);
                         var gitSet = try uwa.getFilesInGitRepo(options.gitRepo.?); // definitely exists
