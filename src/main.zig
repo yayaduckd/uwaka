@@ -9,8 +9,8 @@ fn rebuildFileList(options: *uwa.Options, context: ?*uwa.Context) !uwa.Context {
     options.fileSet.deinit();
 
     // add all files in the git repo
-    if (options.gitRepo.len > 0) {
-        options.fileSet = try uwa.getFilesInGitRepo(options.gitRepo);
+    if (options.gitRepo) |path| {
+        options.fileSet = try uwa.getFilesInGitRepo(path);
     }
 
     // add all explicitly added files
@@ -103,7 +103,7 @@ fn shutdown(context: *uwa.Context, options: *uwa.Options) void {
 
 pub fn main() !void {
     // initialize writer
-    if (!std.mem.eql(u8, uwa.osTag, "linux")) {
+    if (std.mem.eql(u8, uwa.osTag, "windows")) {
         uwa.stdout = std.io.getStdOut().writer();
         uwa.stderr = std.io.getStdErr().writer();
     }
@@ -150,9 +150,13 @@ pub fn main() !void {
                 }
                 lastEventTime = currentTime;
             },
-            uwa.EventType.FileCreate, uwa.EventType.FileMove, uwa.EventType.FileDelete => {
+            uwa.EventType.FileCreate, uwa.EventType.FileMove => {
                 // rebuild file list
                 context = try rebuildFileList(&options, &context);
+            },
+            uwa.EventType.FileDelete => {
+                options.fileSet.remove(event.fileName);
+                options.explicitFiles.remove(event.fileName);
             },
             else => {
                 uwa.log.err("Unknown event type: {}", .{event.etype});

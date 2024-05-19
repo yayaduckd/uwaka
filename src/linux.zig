@@ -61,11 +61,13 @@ pub fn initWatching(options: *uwa.Options) !Context {
 
     const watchMask = std.os.linux.IN.MOVED_FROM | std.os.linux.IN.MOVED_TO | std.os.linux.IN.CREATE | std.os.linux.IN.DELETE;
     // watch the git directory
-    const gwd = std.posix.inotify_add_watch(context.inotify_fd, options.gitRepo, watchMask) catch |err| {
-        try uwa.stderr.print("Failed to add watch for git directory {s}\n", .{options.gitRepo});
-        return err;
-    };
-    try context.watchedFiles.put(gwd, options.gitRepo);
+    if (options.gitRepo) |path| {
+        const gwd = std.posix.inotify_add_watch(context.inotify_fd, path, watchMask) catch |err| {
+            try uwa.stderr.print("Failed to add watch for git directory {s}\n", .{path});
+            return err;
+        };
+        try context.watchedFiles.put(gwd, path);
+    }
 
     context.eventQueue = std.ArrayList(uwa.Event).init(uwa.alloc);
 
@@ -122,7 +124,7 @@ fn inotifyToUwakaEvent(event: inotifyEvent, context: *Context) ?uwa.EventType {
         std.os.linux.IN.MOVED_FROM => return handleMove(event.cookie, context),
         std.os.linux.IN.MOVED_TO => return handleMove(event.cookie, context),
         else => {
-            uwa.log.debug("Unknwon event with mask {}", .{event.mask});
+            uwa.log.debug("Unknown event with mask {}", .{event.mask});
             return uwa.EventType.Unknown;
         },
     }
@@ -179,6 +181,8 @@ pub fn nextEvent(context: *Context, options: *uwa.Options) !uwa.Event {
             var fileName = context.watchedFiles.get(event.wd).?;
             if (etype == uwa.EventType.FileDelete) {
                 fileName = event.name;
+                _ = context.watchedFiles.remove(event.wd);
+                std.posix.inotify_rm_watch(context.inotify_fd, event.wd);
             }
             const uwakaEvent = uwa.Event{
                 .etype = etype,

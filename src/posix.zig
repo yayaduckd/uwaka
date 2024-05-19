@@ -15,7 +15,13 @@ pub fn initWatching(options: *uwa.Options) !Context {
     return Context{
         .eventQueue = std.ArrayList(uwa.Event).init(uwa.alloc),
         .lastModifiedMap = std.StringHashMap(i128).init(uwa.alloc),
-        .gitRepoFiles = try uwa.getFilesInGitRepo(options.gitRepo),
+        .gitRepoFiles = blk: {
+            if (options.gitRepo) |path| {
+                break :blk try uwa.getFilesInGitRepo(path);
+            } else {
+                break :blk std.BufSet.init(uwa.alloc);
+            }
+        },
     };
 }
 
@@ -39,16 +45,9 @@ pub fn nextEvent(context: *Context, options: *uwa.Options) !uwa.Event {
         while (filesIter.next()) |filePtr| {
             const file = filePtr.*;
             const stat = cwd.statFile(file) catch {
-                var i: usize = 0;
-                var iter = context.gitRepoFiles.iterator();
                 // remove the file from the git repo files
-                while (iter.next()) |gitFile| {
-                    if (std.mem.eql(u8, gitFile.*, file)) {
-                        _ = context.gitRepoFiles.remove(file);
-                        break;
-                    }
-                    i += 1;
-                }
+                context.gitRepoFiles.remove(file);
+                _ = context.lastModifiedMap.remove(file);
                 // file deleted
                 return uwa.Event{
                     .etype = uwa.EventType.FileDelete,
@@ -71,22 +70,24 @@ pub fn nextEvent(context: *Context, options: *uwa.Options) !uwa.Event {
         }
 
         if (numIter >= 5) {
-            // check for new files in repo
-            var newFiles = try uwa.getFilesInGitRepo(options.gitRepo);
-            var iter = newFiles.iterator();
-            while (iter.next()) |file| {
-                if (context.gitRepoFiles.contains(file.*)) {
-                    continue;
+            if (options.gitRepo) |path| {
+                // check for new files in repo
+                var newFiles = try uwa.getFilesInGitRepo(path);
+                var iter = newFiles.iterator();
+                while (iter.next()) |file| {
+                    if (context.gitRepoFiles.contains(file.*)) {
+                        continue;
+                    }
+                    try context.gitRepoFiles.insert(file.*);
+                    const event = uwa.Event{
+                        .etype = uwa.EventType.FileCreate,
+                        .fileName = context.gitRepoFiles.hash_map.getEntry(file.*).?.key_ptr.*,
+                    };
+                    try context.eventQueue.insert(0, event);
                 }
-                try context.gitRepoFiles.insert(file.*);
-                const event = uwa.Event{
-                    .etype = uwa.EventType.FileCreate,
-                    .fileName = context.gitRepoFiles.hash_map.getEntry(file.*).?.key_ptr.*,
-                };
-                try context.eventQueue.insert(0, event);
+                newFiles.deinit();
+                numIter = 0;
             }
-            newFiles.deinit();
-            numIter = 0;
         }
 
         if (context.eventQueue.items.len > 0) {
@@ -94,7 +95,7 @@ pub fn nextEvent(context: *Context, options: *uwa.Options) !uwa.Event {
         }
 
         // sleep for the polling interval
-        std.time.sleep(1000000000 * 2); // 10 seconds
+        std.time.sleep(1000000000 * 2); // 2 seconds
         numIter += 1;
     }
 }

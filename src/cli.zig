@@ -57,7 +57,7 @@ pub fn parseArgs(allocator: std.mem.Allocator) !uwa.Options {
         .wakatimeCliPath = "",
         .editorName = "",
         .editorVersion = "",
-        .gitRepo = "",
+        .gitRepo = null,
     };
 
     var args = try std.process.argsWithAllocator(allocator);
@@ -117,7 +117,7 @@ pub fn parseArgs(allocator: std.mem.Allocator) !uwa.Options {
                 Args.gitRepo => {
                     if (args.next()) |gitRepo| {
                         options.gitRepo = gitRepo;
-                        var gitSet = try uwa.getFilesInGitRepo(options.gitRepo);
+                        var gitSet = try uwa.getFilesInGitRepo(options.gitRepo.?); // definitely exists
                         var iter = gitSet.iterator();
                         while (iter.next()) |file| {
                             try options.fileSet.insert(file.*);
