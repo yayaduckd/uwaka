@@ -95,28 +95,28 @@ pub fn parseArgs(allocator: std.mem.Allocator) !uwa.Options {
                             printCliError("\rError running wakatime-cli binary {s}. Verify that the path specified is a valid binary.\n", .{wakatimeCliPath});
                         };
 
-                        options.wakatimeCliPath = wakatimeCliPath;
+                        options.wakatimeCliPath = try uwa.alloc.dupe(u8, wakatimeCliPath);
                     } else {
                         printCliError("Expected argument for {s}\n", .{arg});
                     }
                 },
                 Args.editorName => {
                     if (args.next()) |editorName| {
-                        options.editorName = editorName;
+                        options.editorName = try uwa.alloc.dupe(u8, editorName);
                     } else {
                         printCliError("Expected argument for {s}\n", .{arg});
                     }
                 },
                 Args.editorVersion => {
                     if (args.next()) |editorVersion| {
-                        options.editorVersion = editorVersion;
+                        options.editorVersion = try uwa.alloc.dupe(u8, editorVersion);
                     } else {
                         printCliError("Expected argument for {s}\n", .{arg});
                     }
                 },
                 Args.gitRepo => {
                     if (args.next()) |gitRepo| {
-                        options.gitRepo = gitRepo;
+                        options.gitRepo = try uwa.alloc.dupe(u8, gitRepo);
                         var gitSet = try uwa.getFilesInGitRepo(options.gitRepo.?); // definitely exists
                         var iter = gitSet.iterator();
                         while (iter.next()) |file| {
