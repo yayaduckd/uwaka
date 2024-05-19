@@ -123,7 +123,6 @@ pub fn main() !void {
     // add watch for all files in file list
 
     var context = try uwa.initWatching(&options);
-    shutdown(&context, &options);
     var lastEventTime = std.time.milliTimestamp();
     const DEBOUNCE_TIME = 5000; // 5 seconds
     var lastHeartbeat: i64 = std.time.milliTimestamp() - 1000 * 60 * 2; // 2 mins ago
