@@ -19,7 +19,7 @@ pub usingnamespace @import("events.zig");
 const uwa = @import("mix.zig");
 
 pub const NAME = "uwaka";
-pub const VERSION = "0.4.0";
+pub const VERSION = "0.4.1";
 
 pub var stdout: std.fs.File.Writer = blk: {
     const tag = @tagName(@import("builtin").os.tag);
