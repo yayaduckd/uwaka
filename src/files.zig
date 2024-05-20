@@ -35,15 +35,6 @@ pub fn getFilesInGitRepo(repoPath: []const u8) !FileSet {
     return files;
 }
 
-pub fn addBufSet(self: *std.BufSet, other: *std.BufSet) void {
-    var it = other.iterator();
-    while (it.next()) |entry| {
-        self.insert(entry.*) catch {
-            @panic("oom adding bufsets");
-        };
-    }
-}
-
 pub fn addFileSet(self: *FileSet, other: *FileSet) void {
     var it = other.iterator();
     while (it.next()) |entry| {
@@ -117,12 +108,6 @@ pub const FileSet = struct {
         return self.bufSet.copy(value);
     }
 };
-
-pub fn addPathToBufSet(bufset: *std.BufSet, path: []const u8) !void {
-    // resolve
-    const resolvedPath = try std.fs.path.resolve(uwa.alloc, &.{path});
-    try bufset.insert(resolvedPath);
-}
 
 pub fn getFilesInFolder(folderPath: []const u8) !FileSet {
     var result = FileSet.init(uwa.alloc);

@@ -52,7 +52,7 @@ fn printCliError(comptime format: []const u8, args: anytype) void {
 
 pub fn parseArgs(allocator: std.mem.Allocator) !uwa.Options {
     var options = uwa.Options{
-        .explicitFiles = std.BufSet.init(allocator),
+        .explicitFiles = uwa.FileSet.init(allocator),
         .fileSet = uwa.FileSet.init(allocator),
         .wakatimeCliPath = "",
         .editorName = "",
@@ -145,7 +145,7 @@ pub fn parseArgs(allocator: std.mem.Allocator) !uwa.Options {
                             allocator.free(result.stdout);
                             allocator.free(result.stderr);
 
-                            break :blk std.BufSet.init(allocator);
+                            break :blk uwa.FileSet.init(allocator);
                         };
 
                         try options.gitRepos.?.insert(gitRepo);
@@ -169,7 +169,7 @@ pub fn parseArgs(allocator: std.mem.Allocator) !uwa.Options {
                 unreachable;
             };
             if (stat.kind == std.fs.File.Kind.directory) {
-                options.explicitFolders = options.explicitFolders orelse std.BufSet.init(allocator);
+                options.explicitFolders = options.explicitFolders orelse uwa.FileSet.init(allocator);
                 try options.explicitFolders.?.insert(arg);
 
                 var filesFound = try uwa.getFilesInFolder(arg);
