@@ -59,16 +59,26 @@ pub fn initWatching(options: *uwa.Options) !Context {
         try uwa.stderr.print("No files to watch\n", .{});
     }
 
-    const watchMask = std.os.linux.IN.MOVED_FROM | std.os.linux.IN.MOVED_TO | std.os.linux.IN.CREATE | std.os.linux.IN.DELETE;
+    const directoryWatchMask = std.os.linux.IN.MOVED_FROM | std.os.linux.IN.MOVED_TO | std.os.linux.IN.CREATE | std.os.linux.IN.DELETE;
     // watch the git directory
     if (options.gitRepos) |repos| {
         var reposIterator = repos.iterator();
         while (reposIterator.next()) |repo| {
-            const gwd = std.posix.inotify_add_watch(context.inotify_fd, repo.*, watchMask) catch |err| {
+            const gwd = std.posix.inotify_add_watch(context.inotify_fd, repo.*, directoryWatchMask) catch |err| {
                 try uwa.stderr.print("Failed to add watch for git directory {s}\n", .{repo.*});
                 return err;
             };
             try context.watchedFiles.put(gwd, repo.*);
+        }
+    }
+    if (options.explicitFolders) |folders| {
+        var foldersIterator = folders.iterator();
+        while (foldersIterator.next()) |folder| {
+            const fwd = std.posix.inotify_add_watch(context.inotify_fd, folder.*, directoryWatchMask) catch |err| {
+                try uwa.stderr.print("Failed to add watch for folder {s}\n", .{folder.*});
+                return err;
+            };
+            try context.watchedFiles.put(fwd, folder.*);
         }
     }
 

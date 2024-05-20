@@ -77,6 +77,9 @@ pub fn shutdown(context: *uwa.Context, options: *uwa.Options) void {
     if (options.gitRepos) |gitRepos| {
         gitRepos.deinit();
     }
+    if (options.explicitFolders) |explicitFolders| {
+        explicitFolders.deinit();
+    }
 
     // deinit allocator
     _ = uwa.gpa.deinit();

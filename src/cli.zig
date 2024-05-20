@@ -53,7 +53,7 @@ fn printCliError(comptime format: []const u8, args: anytype) void {
 pub fn parseArgs(allocator: std.mem.Allocator) !uwa.Options {
     var options = uwa.Options{
         .explicitFiles = std.BufSet.init(allocator),
-        .fileSet = std.BufSet.init(allocator),
+        .fileSet = uwa.FileSet.init(allocator),
         .wakatimeCliPath = "",
         .editorName = "",
         .editorVersion = "",
@@ -173,7 +173,7 @@ pub fn parseArgs(allocator: std.mem.Allocator) !uwa.Options {
                 try options.explicitFolders.?.insert(arg);
 
                 var filesFound = try uwa.getFilesInFolder(arg);
-                uwa.addBufSet(&options.fileSet, &filesFound);
+                uwa.addFileSet(&options.fileSet, &filesFound);
                 filesFound.deinit();
             } else {
                 try options.fileSet.insert(arg);
