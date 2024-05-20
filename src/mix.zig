@@ -14,6 +14,7 @@ const osSpecificImplementation = blk: {
 pub usingnamespace osSpecificImplementation;
 pub usingnamespace @import("main.zig");
 pub usingnamespace @import("git.zig");
+pub usingnamespace @import("events.zig");
 
 pub const NAME = "uwaka";
 pub const VERSION = "0.3.1";
