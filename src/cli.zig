@@ -129,7 +129,22 @@ pub fn parseArgs(allocator: std.mem.Allocator) !uwa.Options {
                 },
                 Args.gitRepo => {
                     if (args.next()) |gitRepo| {
-                        options.gitRepos = options.gitRepos orelse std.BufSet.init(allocator);
+                        options.gitRepos = options.gitRepos orelse blk: {
+                            // check if git is installed
+                            // test run it
+                            const result = std.process.Child.run(.{
+                                .allocator = allocator,
+                                .argv = &.{ "git", "version" },
+                                .cwd = gitRepo,
+                            }) catch {
+                                printCliError("Unable to run git. Verify it is installed and available on PATH.", .{});
+                                unreachable;
+                            };
+                            allocator.free(result.stdout);
+                            allocator.free(result.stderr);
+
+                            break :blk std.BufSet.init(allocator);
+                        };
 
                         try options.gitRepos.?.insert(gitRepo);
                         var gitSet = try uwa.getFilesInGitRepo(gitRepo);
