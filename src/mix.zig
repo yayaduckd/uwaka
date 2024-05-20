@@ -13,7 +13,7 @@ const osSpecificImplementation = blk: {
 
 pub usingnamespace osSpecificImplementation;
 pub usingnamespace @import("main.zig");
-pub usingnamespace @import("git.zig");
+pub usingnamespace @import("files.zig");
 pub usingnamespace @import("events.zig");
 
 pub const NAME = "uwaka";
@@ -72,6 +72,7 @@ pub const Options = struct {
     editorName: []const u8, // name of editor to pass to wakatime
     editorVersion: []const u8, // version of editor to pass to wakatime
     gitRepos: ?std.BufSet, // git repo to watch
+    explicitFolders: ?std.BufSet,
 };
 
 pub var gpa = std.heap.GeneralPurposeAllocator(.{}){};

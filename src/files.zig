@@ -33,3 +33,34 @@ pub fn getFilesInGitRepo(repoPath: []const u8) !std.BufSet {
 
     return files;
 }
+
+pub fn addBufSet(self: *std.BufSet, other: *std.BufSet) void {
+    var it = other.iterator();
+    while (it.next()) |entry| {
+        self.insert(entry.*) catch {
+            @panic("oom adding bufsets");
+        };
+    }
+}
+
+pub fn getFilesInFolder(folderPath: []const u8) !std.BufSet {
+    var result = std.BufSet.init(uwa.alloc);
+    // open folder
+    var cwd = std.fs.cwd();
+    var dir = cwd.openDir(folderPath, .{ .iterate = true }) catch |err| {
+        try uwa.stderr.print("Could not open directory {s}", .{folderPath});
+        return err;
+    };
+    // recursively search
+    var walker = try dir.walk(uwa.alloc);
+    while (try walker.next()) |entry| {
+        if (entry.kind == std.fs.File.Kind.file or entry.kind == std.fs.File.Kind.sym_link) {
+            const fullPath: []u8 = try std.fs.path.join(uwa.alloc, &.{ folderPath, entry.path });
+            try result.insert(fullPath);
+            uwa.alloc.free(fullPath);
+        }
+    }
+    walker.deinit();
+    dir.close();
+    return result;
+}
