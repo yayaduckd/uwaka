@@ -71,11 +71,14 @@ pub fn shutdown(context: *uwa.Context, options: *uwa.Options) void {
     uwa.deInitWatching(context);
     options.fileSet.deinit();
     options.explicitFiles.deinit();
-    uwa.alloc.free(options.editorName);
-    uwa.alloc.free(options.editorVersion);
     uwa.alloc.free(options.wakatimeCliPath);
-    if (options.gitRepos) |gitRepos| {
-        gitRepos.deinit();
+    if (options.gitRepos) |repos| {
+        _ = repos;
+        options.gitRepos.?.deinit();
+    }
+    if (options.explicitFolders) |folders| {
+        _ = folders;
+        options.explicitFolders.?.deinit();
     }
 
     // deinit allocator

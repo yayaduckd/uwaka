@@ -13,8 +13,10 @@ const osSpecificImplementation = blk: {
 
 pub usingnamespace osSpecificImplementation;
 pub usingnamespace @import("main.zig");
-pub usingnamespace @import("git.zig");
+pub usingnamespace @import("files.zig");
 pub usingnamespace @import("events.zig");
+
+const uwa = @import("mix.zig");
 
 pub const NAME = "uwaka";
 pub const VERSION = "0.3.1";
@@ -66,12 +68,13 @@ pub const Event = struct {
 };
 
 pub const Options = struct {
-    explicitFiles: std.BufSet, // list of files to watch
-    fileSet: std.BufSet, // list of files to watch
+    explicitFiles: uwa.FileSet, // list of files to watch
+    fileSet: uwa.FileSet, // list of files to watch
     wakatimeCliPath: []const u8, // path to wakatime-cli binary
     editorName: []const u8, // name of editor to pass to wakatime
     editorVersion: []const u8, // version of editor to pass to wakatime
-    gitRepos: ?std.BufSet, // git repo to watch
+    gitRepos: ?uwa.FileSet, // git repo to watch
+    explicitFolders: ?uwa.FileSet,
 };
 
 pub var gpa = std.heap.GeneralPurposeAllocator(.{}){};

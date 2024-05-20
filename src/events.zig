@@ -6,20 +6,7 @@ pub fn rebuildFileList(options: *uwa.Options, context: ?*uwa.Context) !uwa.Conte
 
     // clear fileset
     options.fileSet.deinit();
-    options.fileSet = std.BufSet.init(uwa.alloc);
-
-    // add all files in the git repo
-    if (options.gitRepos) |repos| {
-        var gitRepoIterator = repos.iterator();
-        while (gitRepoIterator.next()) |path| {
-            var repoFiles = try uwa.getFilesInGitRepo(path.*);
-            var repoFilesIterator = repoFiles.iterator();
-            while (repoFilesIterator.next()) |file| {
-                try options.fileSet.insert(file.*);
-            }
-            repoFiles.deinit();
-        }
-    }
+    options.fileSet = try uwa.getFilesinGitReposAndFolders(options);
 
     // add all explicitly added files
     var explicitFileIterator = options.explicitFiles.iterator();

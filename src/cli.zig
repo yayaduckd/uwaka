@@ -52,12 +52,13 @@ fn printCliError(comptime format: []const u8, args: anytype) void {
 
 pub fn parseArgs(allocator: std.mem.Allocator) !uwa.Options {
     var options = uwa.Options{
-        .explicitFiles = std.BufSet.init(allocator),
-        .fileSet = std.BufSet.init(allocator),
+        .explicitFiles = uwa.FileSet.init(allocator),
+        .fileSet = uwa.FileSet.init(allocator),
         .wakatimeCliPath = "",
         .editorName = "",
         .editorVersion = "",
         .gitRepos = null,
+        .explicitFolders = null,
     };
 
     var arena = std.heap.ArenaAllocator.init(uwa.alloc);
@@ -78,6 +79,7 @@ pub fn parseArgs(allocator: std.mem.Allocator) !uwa.Options {
         .{ "-g", Args.gitRepo },
     });
 
+    const cwd = std.fs.cwd();
     _ = args.skip(); // skip the first arg which is the program name
     // All args with -- will be options, others will be files to watch
     while (args.next()) |arg| {
@@ -143,7 +145,7 @@ pub fn parseArgs(allocator: std.mem.Allocator) !uwa.Options {
                             allocator.free(result.stdout);
                             allocator.free(result.stderr);
 
-                            break :blk std.BufSet.init(allocator);
+                            break :blk uwa.FileSet.init(allocator);
                         };
 
                         try options.gitRepos.?.insert(gitRepo);
@@ -159,8 +161,24 @@ pub fn parseArgs(allocator: std.mem.Allocator) !uwa.Options {
                 },
             }
         } else {
-            try options.fileSet.insert(arg);
-            try options.explicitFiles.insert(arg);
+            // argument is a file
+            // stat file
+
+            const stat = cwd.statFile(arg) catch {
+                printCliError("Could not stat file {s}. Verify it exists.", .{arg});
+                unreachable;
+            };
+            if (stat.kind == std.fs.File.Kind.directory) {
+                options.explicitFolders = options.explicitFolders orelse uwa.FileSet.init(allocator);
+                try options.explicitFolders.?.insert(arg);
+
+                var filesFound = try uwa.getFilesInFolder(arg);
+                uwa.addFileSet(&options.fileSet, &filesFound);
+                filesFound.deinit();
+            } else {
+                try options.fileSet.insert(arg);
+                try options.explicitFiles.insert(arg);
+            }
         }
     }
 

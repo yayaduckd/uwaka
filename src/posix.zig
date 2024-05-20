@@ -60,26 +60,21 @@ pub fn nextEvent(context: *Context, options: *uwa.Options) !uwa.Event {
         }
 
         if (numIter >= 5) {
-            if (options.gitRepos) |repos| {
-                // check for new files in repos
-                var reposIter = repos.iterator();
-                while (reposIter.next()) |repo| {
-                    var newFiles = try uwa.getFilesInGitRepo(repo.*);
-                    var iter = newFiles.iterator();
-                    while (iter.next()) |file| {
-                        if (options.fileSet.contains(file.*)) {
-                            continue;
-                        }
-                        const event = uwa.Event{
-                            .etype = uwa.EventType.FileCreate,
-                            .fileName = try uwa.alloc.dupe(u8, file.*),
-                        };
-                        try context.eventQueue.insert(0, event);
-                    }
-                    newFiles.deinit();
+            // check for new files in repos
+            var newFiles = try uwa.getFilesinGitReposAndFolders(options);
+            var iter = newFiles.iterator();
+            while (iter.next()) |file| {
+                if (options.fileSet.contains(file.*)) {
+                    continue;
                 }
-                numIter = 0;
+                const event = uwa.Event{
+                    .etype = uwa.EventType.FileCreate,
+                    .fileName = try uwa.alloc.dupe(u8, file.*),
+                };
+                try context.eventQueue.insert(0, event);
             }
+            newFiles.deinit();
+            numIter = 0;
         }
 
         if (context.eventQueue.items.len > 0) {

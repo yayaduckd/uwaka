@@ -6,12 +6,19 @@ const std = @import("std");
 
 const MAX_PATH_LENGTH = 4096;
 const MOVE_TIMEOUT: i64 = 10000; // 10 second
+const directoryWatchMask = std.os.linux.IN.MOVED_FROM |
+    std.os.linux.IN.MOVED_TO |
+    std.os.linux.IN.CREATE |
+    // std.os.linux.IN.DELETE |
+    std.os.linux.IN.ONLYDIR;
+const fileWatchMask = std.os.linux.IN.MODIFY | std.os.linux.IN.DELETE_SELF;
 
 pub const Context = struct {
     inotify_fd: i32,
     watchedFiles: std.AutoHashMap(i32, []const u8),
     eventQueue: std.ArrayList(uwa.Event),
     moveCookies: std.AutoHashMap(u32, i64),
+    createdFiles: uwa.FileSet,
 };
 
 pub fn initWatching(options: *uwa.Options) !Context {
@@ -20,6 +27,7 @@ pub fn initWatching(options: *uwa.Options) !Context {
         .watchedFiles = std.AutoHashMap(i32, []const u8).init(uwa.alloc),
         .eventQueue = std.ArrayList(uwa.Event).init(uwa.alloc),
         .moveCookies = std.AutoHashMap(u32, i64).init(uwa.alloc),
+        .createdFiles = uwa.FileSet.init(uwa.alloc),
     };
 
     // init inotify
@@ -46,12 +54,11 @@ pub fn initWatching(options: *uwa.Options) !Context {
             continue;
         }
 
-        const wd = std.posix.inotify_add_watch(context.inotify_fd, file, std.os.linux.IN.MODIFY) catch {
+        const wd = std.posix.inotify_add_watch(context.inotify_fd, file, fileWatchMask) catch {
             try uwa.stderr.print("Failed to add watch for file {s}\n", .{file});
             continue;
         };
         try context.watchedFiles.put(wd, file);
-
         uwa.log.debug("Added watch for file {s} with wd {d}", .{ file, wd });
     }
 
@@ -59,16 +66,27 @@ pub fn initWatching(options: *uwa.Options) !Context {
         try uwa.stderr.print("No files to watch\n", .{});
     }
 
-    const watchMask = std.os.linux.IN.MOVED_FROM | std.os.linux.IN.MOVED_TO | std.os.linux.IN.CREATE | std.os.linux.IN.DELETE;
     // watch the git directory
     if (options.gitRepos) |repos| {
         var reposIterator = repos.iterator();
         while (reposIterator.next()) |repo| {
-            const gwd = std.posix.inotify_add_watch(context.inotify_fd, repo.*, watchMask) catch |err| {
+            const gwd = std.posix.inotify_add_watch(context.inotify_fd, repo.*, directoryWatchMask) catch |err| {
                 try uwa.stderr.print("Failed to add watch for git directory {s}\n", .{repo.*});
                 return err;
             };
             try context.watchedFiles.put(gwd, repo.*);
+            uwa.log.debug("Added watch for directory {s} with wd {d}", .{ repo.*, gwd });
+        }
+    }
+    if (options.explicitFolders) |folders| {
+        var foldersIterator = folders.iterator();
+        while (foldersIterator.next()) |folder| {
+            const fwd = std.posix.inotify_add_watch(context.inotify_fd, folder.*, directoryWatchMask) catch |err| {
+                try uwa.stderr.print("Failed to add watch for folder {s}\n", .{folder.*});
+                return err;
+            };
+            try context.watchedFiles.put(fwd, folder.*);
+            uwa.log.debug("Added watch for directory {s} with wd {d}", .{ folder.*, fwd });
         }
     }
 
@@ -84,6 +102,7 @@ pub fn deInitWatching(context: *Context) void {
     context.eventQueue.deinit();
     context.watchedFiles.deinit();
     context.moveCookies.deinit();
+    context.createdFiles.deinit();
 }
 
 // define the inotify_event struct
@@ -92,7 +111,7 @@ const inotifyEvent = struct {
     mask: u32,
     cookie: u32,
     len: u32,
-    name: []u8,
+    name: ?[]u8,
 };
 
 fn handleMove(cookie: u32, context: *Context) ?uwa.EventType {
@@ -117,20 +136,35 @@ fn handleMove(cookie: u32, context: *Context) ?uwa.EventType {
     }
 }
 
-fn inotifyToUwakaEvent(event: inotifyEvent, context: *Context) ?uwa.EventType {
-    switch (event.mask) {
-        std.os.linux.IN.MODIFY => return uwa.EventType.FileChange,
-        std.os.linux.IN.CREATE => return uwa.EventType.FileCreate,
-        std.os.linux.IN.DELETE => return uwa.EventType.FileDelete,
-        std.os.linux.IN.DELETE | std.os.linux.IN.IGNORED => return uwa.EventType.FileDelete,
-        std.os.linux.IN.IGNORED => @panic("unreachable"),
-        std.os.linux.IN.MOVED_FROM => return handleMove(event.cookie, context),
-        std.os.linux.IN.MOVED_TO => return handleMove(event.cookie, context),
-        else => {
-            uwa.log.debug("Unknown event with mask {}", .{event.mask});
-            return uwa.EventType.Unknown;
-        },
+const EventTypeInfo = struct {
+    isDir: bool,
+    etype: uwa.EventType,
+};
+
+fn inotifyToUwakaEvent(event: inotifyEvent, context: *Context) ?EventTypeInfo {
+    const m = event.mask;
+    const IN = std.os.linux.IN;
+    const etype = uwa.EventType;
+    var isDir = false;
+    const finalType = blk: {
+        if (m & IN.ISDIR > 0) isDir = true;
+        if (m & IN.MODIFY > 0) break :blk etype.FileChange;
+        if (m & IN.CREATE > 0) break :blk etype.FileCreate;
+        // if (m & IN.DELETE > 0) break :blk etype.FileDelete;
+        if (m & IN.DELETE_SELF > 0) break :blk etype.FileDelete;
+        if (m & IN.MOVED_FROM > 0) break :blk handleMove(event.cookie, context);
+        if (m & IN.MOVED_TO > 0) break :blk handleMove(event.cookie, context);
+        uwa.log.debug("Unknown event with mask {}", .{m});
+        break :blk etype.Unknown;
+    };
+
+    if (finalType) |t| {
+        return .{
+            .isDir = isDir,
+            .etype = t,
+        };
     }
+    return null;
 }
 
 pub fn nextEvent(context: *Context, options: *uwa.Options) !uwa.Event {
@@ -167,27 +201,39 @@ pub fn nextEvent(context: *Context, options: *uwa.Options) !uwa.Event {
         event.len = std.mem.bytesToValue(u32, buffer[bytesRead .. bytesRead + @sizeOf(u32)]);
         bytesRead += @sizeOf(u32);
         // copy name
-        event.name = buffer[bytesRead .. bytesRead + event.len];
-        bytesRead += event.len;
+        if (event.len > 0) {
+            const nullCharPos = std.mem.indexOfScalar(u8, buffer[bytesRead..buffer.len], 0) orelse buffer.len - bytesRead;
+            event.name = buffer[bytesRead .. bytesRead + nullCharPos];
+            bytesRead += event.len;
+        } else {
+            event.name = null;
+        }
 
-        uwa.log.debug("inotify event: {any}", .{event});
+        uwa.log.debug("inotify event: {any}. filename = '{s}'", .{ event, event.name orelse "" });
 
         if (event.mask == std.os.linux.IN.IGNORED) continue;
-
-        const eventType = inotifyToUwakaEvent(event, context);
-        if (eventType) |etype| {
+        const eventTypeInfo = inotifyToUwakaEvent(event, context);
+        uwa.log.debug("eventTypeInfo: {any}", .{eventTypeInfo});
+        if (eventTypeInfo) |etypeinfo| {
             var fileName = context.watchedFiles.get(event.wd).?;
-            if (etype == uwa.EventType.FileDelete) {
-                fileName = event.name;
+            uwa.log.debug("{s}", .{fileName});
+            if (etypeinfo.etype == uwa.EventType.FileDelete) {
+                fileName = event.name orelse fileName;
                 _ = context.watchedFiles.remove(event.wd);
-                std.posix.inotify_rm_watch(context.inotify_fd, event.wd);
-            } else if (etype == uwa.EventType.FileCreate) {
-                fileName = event.name;
-                try context.watchedFiles.put(event.wd, fileName);
-                uwa.log.debug("new file created: {s} with wd {d}", .{ fileName, event.wd });
+                context.createdFiles.remove(fileName);
+            } else if (etypeinfo.etype == uwa.EventType.FileCreate) {
+                const dir = context.watchedFiles.get(event.wd).?;
+                const joinedPath = try std.fs.path.join(uwa.alloc, &.{ dir, event.name.? });
+                defer uwa.alloc.free(joinedPath);
+                try context.createdFiles.insert(joinedPath);
+                fileName = context.createdFiles.get(joinedPath).?;
+                const mask: u32 = if (etypeinfo.isDir) directoryWatchMask else fileWatchMask;
+                uwa.log.debug("adding watch for {s} with mask {d}", .{ fileName, mask });
+                const wd = try std.posix.inotify_add_watch(context.inotify_fd, fileName, mask);
+                try context.watchedFiles.put(wd, context.createdFiles.get(fileName).?);
             }
             const uwakaEvent = uwa.Event{
-                .etype = etype,
+                .etype = etypeinfo.etype,
                 .fileName = fileName,
             };
             try context.eventQueue.append(uwakaEvent);
