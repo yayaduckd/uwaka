@@ -167,12 +167,21 @@ pub fn parseArgs(allocator: std.mem.Allocator) !uwa.Options {
         } else {
             // argument is a file
             // stat file
+            const file = try std.fs.path.resolve(uwa.alloc, &.{arg});
 
-            const stat = cwd.statFile(arg) catch {
-                printCliError("Could not stat file {s}. Verify it exists.", .{arg});
-                unreachable;
-            };
-            if (stat.kind == std.fs.File.Kind.directory) {
+            var isDirectory = false;
+            const stat = cwd.statFile(file);
+            if (stat == std.posix.OpenError.IsDir) {
+                isDirectory = true;
+            } else {
+                const noErrorStat = stat catch {
+                    printCliError("Could not stat file {s}. Verify it exists.\n", .{arg});
+                    unreachable;
+                };
+                isDirectory = noErrorStat.kind == std.fs.File.Kind.directory;
+            }
+
+            if (isDirectory) {
                 options.explicitFolders = options.explicitFolders orelse uwa.FileSet.init(allocator);
                 try options.explicitFolders.?.insert(arg);
 
