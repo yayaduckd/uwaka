@@ -8,6 +8,7 @@ pub fn getFilesInGitRepo(repoPath: []const u8) !FileSet {
     var files = FileSet.init(uwa.alloc);
 
     const resolvedRepoPath = try std.fs.path.resolve(uwa.alloc, &.{repoPath});
+    defer uwa.alloc.free(resolvedRepoPath);
     const gitFilesResult = std.process.Child.run(.{
         .allocator = uwa.alloc,
         .argv = &.{ "git", "ls-files", "--cached", "--others", "--exclude-standard" },
@@ -72,6 +73,21 @@ pub const FileSet = struct {
     pub fn insert(self: *FileSet, value: []const u8) !void {
         const resolvedPath = try std.fs.path.resolve(self.allocator, &.{value});
         try self.bufSet.insert(resolvedPath);
+        self.allocator.free(resolvedPath);
+    }
+
+    pub fn get(self: *FileSet, value: []const u8) ?[]const u8 {
+        const resolvedPath = std.fs.path.resolve(self.allocator, &.{value}) catch {
+            return null;
+        };
+        defer self.allocator.free(resolvedPath);
+        const result = self.bufSet.hash_map.getEntry(resolvedPath);
+        if (result) |entry| {
+            return entry.key_ptr.*;
+        } else {
+            return null;
+        }
+        return result;
     }
 
     /// Check if the set contains an item matching the passed string

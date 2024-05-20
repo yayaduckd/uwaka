@@ -18,6 +18,7 @@ pub const Context = struct {
     watchedFiles: std.AutoHashMap(i32, []const u8),
     eventQueue: std.ArrayList(uwa.Event),
     moveCookies: std.AutoHashMap(u32, i64),
+    createdFiles: uwa.FileSet,
 };
 
 pub fn initWatching(options: *uwa.Options) !Context {
@@ -26,6 +27,7 @@ pub fn initWatching(options: *uwa.Options) !Context {
         .watchedFiles = std.AutoHashMap(i32, []const u8).init(uwa.alloc),
         .eventQueue = std.ArrayList(uwa.Event).init(uwa.alloc),
         .moveCookies = std.AutoHashMap(u32, i64).init(uwa.alloc),
+        .createdFiles = uwa.FileSet.init(uwa.alloc),
     };
 
     // init inotify
@@ -57,7 +59,6 @@ pub fn initWatching(options: *uwa.Options) !Context {
             continue;
         };
         try context.watchedFiles.put(wd, file);
-
         uwa.log.debug("Added watch for file {s} with wd {d}", .{ file, wd });
     }
 
@@ -74,6 +75,7 @@ pub fn initWatching(options: *uwa.Options) !Context {
                 return err;
             };
             try context.watchedFiles.put(gwd, repo.*);
+            uwa.log.debug("Added watch for directory {s} with wd {d}", .{ repo.*, gwd });
         }
     }
     if (options.explicitFolders) |folders| {
@@ -84,6 +86,7 @@ pub fn initWatching(options: *uwa.Options) !Context {
                 return err;
             };
             try context.watchedFiles.put(fwd, folder.*);
+            uwa.log.debug("Added watch for directory {s} with wd {d}", .{ folder.*, fwd });
         }
     }
 
@@ -99,6 +102,7 @@ pub fn deInitWatching(context: *Context) void {
     context.eventQueue.deinit();
     context.watchedFiles.deinit();
     context.moveCookies.deinit();
+    context.createdFiles.deinit();
 }
 
 // define the inotify_event struct
@@ -216,15 +220,17 @@ pub fn nextEvent(context: *Context, options: *uwa.Options) !uwa.Event {
             if (etypeinfo.etype == uwa.EventType.FileDelete) {
                 fileName = event.name orelse fileName;
                 _ = context.watchedFiles.remove(event.wd);
-                std.posix.inotify_rm_watch(context.inotify_fd, event.wd);
+                context.createdFiles.remove(fileName);
             } else if (etypeinfo.etype == uwa.EventType.FileCreate) {
                 const dir = context.watchedFiles.get(event.wd).?;
-                fileName = try std.fs.path.join(uwa.alloc, &.{ dir, event.name.? });
+                const joinedPath = try std.fs.path.join(uwa.alloc, &.{ dir, event.name.? });
+                defer uwa.alloc.free(joinedPath);
+                try context.createdFiles.insert(joinedPath);
+                fileName = context.createdFiles.get(joinedPath).?;
                 const mask: u32 = if (etypeinfo.isDir) directoryWatchMask else fileWatchMask;
                 uwa.log.debug("adding watch for {s} with mask {d}", .{ fileName, mask });
                 const wd = try std.posix.inotify_add_watch(context.inotify_fd, fileName, mask);
-                try context.watchedFiles.put(wd, fileName);
-                uwa.log.debug("new file created: {s} with wd {d}", .{ fileName, event.wd });
+                try context.watchedFiles.put(wd, context.createdFiles.get(fileName).?);
             }
             const uwakaEvent = uwa.Event{
                 .etype = etypeinfo.etype,
