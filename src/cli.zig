@@ -57,7 +57,7 @@ pub fn parseArgs(allocator: std.mem.Allocator) !uwa.Options {
         .wakatimeCliPath = "",
         .editorName = "",
         .editorVersion = "",
-        .gitRepo = null,
+        .gitRepos = null,
     };
 
     var arena = std.heap.ArenaAllocator.init(uwa.alloc);
@@ -128,13 +128,11 @@ pub fn parseArgs(allocator: std.mem.Allocator) !uwa.Options {
                     }
                 },
                 Args.gitRepo => {
-                    if (options.gitRepo != null) {
-                        printCliError("Git repo specified multiple times. Make up your mind!\n", .{});
-                    }
-
                     if (args.next()) |gitRepo| {
-                        options.gitRepo = try uwa.alloc.dupe(u8, gitRepo);
-                        var gitSet = try uwa.getFilesInGitRepo(options.gitRepo.?); // definitely exists
+                        options.gitRepos = options.gitRepos orelse std.BufSet.init(allocator);
+
+                        try options.gitRepos.?.insert(gitRepo);
+                        var gitSet = try uwa.getFilesInGitRepo(gitRepo);
                         var iter = gitSet.iterator();
                         while (iter.next()) |file| {
                             try options.fileSet.insert(file.*);

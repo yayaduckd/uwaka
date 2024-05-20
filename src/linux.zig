@@ -61,12 +61,15 @@ pub fn initWatching(options: *uwa.Options) !Context {
 
     const watchMask = std.os.linux.IN.MOVED_FROM | std.os.linux.IN.MOVED_TO | std.os.linux.IN.CREATE | std.os.linux.IN.DELETE;
     // watch the git directory
-    if (options.gitRepo) |path| {
-        const gwd = std.posix.inotify_add_watch(context.inotify_fd, path, watchMask) catch |err| {
-            try uwa.stderr.print("Failed to add watch for git directory {s}\n", .{path});
-            return err;
-        };
-        try context.watchedFiles.put(gwd, path);
+    if (options.gitRepos) |repos| {
+        var reposIterator = repos.iterator();
+        while (reposIterator.next()) |repo| {
+            const gwd = std.posix.inotify_add_watch(context.inotify_fd, repo.*, watchMask) catch |err| {
+                try uwa.stderr.print("Failed to add watch for git directory {s}\n", .{repo.*});
+                return err;
+            };
+            try context.watchedFiles.put(gwd, repo.*);
+        }
     }
 
     context.eventQueue = std.ArrayList(uwa.Event).init(uwa.alloc);
@@ -167,14 +170,9 @@ pub fn nextEvent(context: *Context, options: *uwa.Options) !uwa.Event {
         event.name = buffer[bytesRead .. bytesRead + event.len];
         bytesRead += event.len;
 
-        if (event.mask == std.os.linux.IN.IGNORED) {
-            // file name
-            const fileName = context.watchedFiles.get(event.wd).?;
-            options.explicitFiles.remove(fileName);
-            options.fileSet.remove(fileName);
-            _ = context.watchedFiles.remove(event.wd);
-            continue;
-        }
+        uwa.log.debug("inotify event: {any}", .{event});
+
+        if (event.mask == std.os.linux.IN.IGNORED) continue;
 
         const eventType = inotifyToUwakaEvent(event, context);
         if (eventType) |etype| {
@@ -183,6 +181,10 @@ pub fn nextEvent(context: *Context, options: *uwa.Options) !uwa.Event {
                 fileName = event.name;
                 _ = context.watchedFiles.remove(event.wd);
                 std.posix.inotify_rm_watch(context.inotify_fd, event.wd);
+            } else if (etype == uwa.EventType.FileCreate) {
+                fileName = event.name;
+                try context.watchedFiles.put(event.wd, fileName);
+                uwa.log.debug("new file created: {s} with wd {d}", .{ fileName, event.wd });
             }
             const uwakaEvent = uwa.Event{
                 .etype = etype,

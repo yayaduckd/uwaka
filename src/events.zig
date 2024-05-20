@@ -6,10 +6,19 @@ pub fn rebuildFileList(options: *uwa.Options, context: ?*uwa.Context) !uwa.Conte
 
     // clear fileset
     options.fileSet.deinit();
+    options.fileSet = std.BufSet.init(uwa.alloc);
 
     // add all files in the git repo
-    if (options.gitRepo) |path| {
-        options.fileSet = try uwa.getFilesInGitRepo(path);
+    if (options.gitRepos) |repos| {
+        var gitRepoIterator = repos.iterator();
+        while (gitRepoIterator.next()) |path| {
+            var repoFiles = try uwa.getFilesInGitRepo(path.*);
+            var repoFilesIterator = repoFiles.iterator();
+            while (repoFilesIterator.next()) |file| {
+                try options.fileSet.insert(file.*);
+            }
+            repoFiles.deinit();
+        }
     }
 
     // add all explicitly added files
@@ -53,8 +62,7 @@ pub fn handleEvent(event: uwa.Event, options: *uwa.Options, context: *uwa.Contex
             lastEventTime = currentTime;
         },
         uwa.EventType.FileCreate, uwa.EventType.FileMove => {
-            // rebuild file list
-            context.* = try rebuildFileList(options, context);
+            try options.fileSet.insert(event.fileName);
         },
         uwa.EventType.FileDelete => {
             options.fileSet.remove(event.fileName);

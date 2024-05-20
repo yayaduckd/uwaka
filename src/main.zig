@@ -74,8 +74,8 @@ pub fn shutdown(context: *uwa.Context, options: *uwa.Options) void {
     uwa.alloc.free(options.editorName);
     uwa.alloc.free(options.editorVersion);
     uwa.alloc.free(options.wakatimeCliPath);
-    if (options.gitRepo) |path| {
-        uwa.alloc.free(path);
+    if (options.gitRepos) |gitRepos| {
+        gitRepos.deinit();
     }
 
     // deinit allocator
