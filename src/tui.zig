@@ -29,15 +29,39 @@ pub const Ansi = struct {
     UNDERLINE: []const u8 = ESC ++ "[4m",
     INVERT: []const u8 = ESC ++ "[7m",
 
+    //erase
+    ERASE_TO_END_OF_LINE: []const u8 = ESC ++ "[K",
+
+    // private modes
+    HIDE_CURSOR: []const u8 = ESC ++ "[?25l",
+
     // cursor
-    fn cursor_up(self: *Ansi, n: u32) []const u8 {
+    fn cursorUp(self: *Ansi, n: usize) []const u8 {
         return std.fmt.allocPrint(self.arena.allocator(), "{s}{s}{d}{s}", .{ ESC, "[", n, "A" }) catch {
             @panic("printing cursor_up failed");
         };
     }
 
-    fn cursor_down(self: *Ansi, n: u32) []const u8 {
+    fn cursorUpB(self: *Ansi, n: usize) []const u8 {
+        return std.fmt.allocPrint(self.arena.allocator(), "{s}{s}{d}{s}", .{ ESC, "[", n, "F" }) catch {
+            @panic("printing cursor_up failed");
+        };
+    }
+
+    fn cursorDown(self: *Ansi, n: usize) []const u8 {
         return std.fmt.allocPrint(self.arena.allocator(), "{s}{s}{d}{s}", .{ ESC, "[", n, "B" }) catch {
+            @panic("printing cursor_down failed");
+        };
+    }
+
+    fn cursorDownB(self: *Ansi, n: usize) []const u8 {
+        return std.fmt.allocPrint(self.arena.allocator(), "{s}{s}{d}{s}", .{ ESC, "[", n, "E" }) catch {
+            @panic("printing cursor_down failed");
+        };
+    }
+
+    fn cursorToCol(self: *Ansi, n: usize) []const u8 {
+        return std.fmt.allocPrint(self.arena.allocator(), "{s}{s}{d}{s}", .{ ESC, "[", n, "G" }) catch {
             @panic("printing cursor_down failed");
         };
     }
@@ -67,18 +91,19 @@ inline fn concatStringsN(str1: []const u8, str2: []const u8) []const u8 {
 
 pub const TuiData = struct {
     fileMap: FileHeartbeatMap,
-    currentState: []const u8,
+    ansi: Ansi,
 
     pub fn init(options: *uwa.Options) !TuiData {
-        const fileMap = createSortedFileList(options.fileSet);
-        return .{
-            .fileMap = fileMap,
-            .currentState = try createInitialState(fileMap),
+        var tui = TuiData{
+            .fileMap = createSortedFileList(options.fileSet),
+            .ansi = Ansi.init(uwa.alloc),
         };
+        try printEntireMap(&tui);
+        return tui;
     }
 };
 
-const FileHeartbeatMap = std.ArrayHashMap([]const u8, u32, FileMapContext, std.array_hash_map.autoEqlIsCheap([]const u8));
+const FileHeartbeatMap = std.ArrayHashMap([]const u8, u32, std.array_hash_map.StringContext, std.array_hash_map.autoEqlIsCheap([]const u8));
 
 const FileMapContext = struct {
     pub fn hash(self: FileMapContext, key: []const u8) u32 {
@@ -113,20 +138,46 @@ pub fn createSortedFileList(fileSet: uwa.FileSet) FileHeartbeatMap {
     return fileMap;
 }
 
-fn concatFilesAndHeartbeats(fileMap: FileHeartbeatMap, file: []const u8) ![]const u8 {
-    return std.fmt.allocPrint(uwa.alloc, "{s} - {d}\n", .{ file, fileMap.get(file).? });
-}
+pub fn printEntireMap(tui: *TuiData) !void {
+    // cursor setup
+    try uwa.stdout.print("{s}", .{tui.ansi.HIDE_CURSOR});
 
-pub fn createInitialState(fileArray: FileHeartbeatMap) ![]const u8 {
-    const fullStringPtr = uwa.alloc.create([]const u8) catch @panic("oom while handling tui");
-    var fullString = fullStringPtr.*;
-    fullString = "";
-    for (fileArray.keys()) |file| {
-        const line = try concatFilesAndHeartbeats(fileArray, file);
-        fullString = concatStrings(fullString, line);
+    var iter = tui.fileMap.iterator();
+    while (iter.next()) |entry| {
+        try uwa.stdout.print("{s} - {d}\n", .{ entry.key_ptr.*, entry.value_ptr.* });
     }
 
-    return fullString;
+    // move cursor back to top right of map
+    try uwa.stdout.print("{s}", .{tui.ansi.cursorUpB(tui.fileMap.count())});
+}
+
+pub fn printFileLine(tui: *TuiData, file: []const u8) !void {
+    try uwa.stdout.print("{s} - {d}{s}", .{ file, tui.fileMap.get(file).?, tui.ansi.cursorToCol(0) });
+}
+
+fn updateTui(tui: *TuiData, event: uwa.Event) void {
+    // update fileMap
+    const file = event.fileName;
+    var fileMap = tui.fileMap;
+    const fileEntry = fileMap.get(file).?;
+    fileMap.put(file, fileEntry + 1) catch @panic("oom");
+
+    // update terminal
+    var a = tui.ansi;
+    const fileIndex = fileMap.getIndex(file).?;
+    // assume cursor is at the top right of the file list
+    if (fileIndex > 0) {
+        // go down to the row with the file
+        uwa.stdout.print("{s}", .{a.cursorDownB(fileIndex)}) catch @panic("printing failed");
+    }
+    // erase the line go back up
+    uwa.stdout.print("{s}", .{a.ERASE_TO_END_OF_LINE}) catch @panic("printing failed");
+    // print the new line
+    printFileLine(tui, file) catch @panic("printing failed");
+    if (fileIndex > 0) {
+        // go back up to the top right
+        uwa.stdout.print("{s}", .{a.cursorUpB(fileIndex)}) catch @panic("printing failed");
+    }
 }
 
 pub fn logHeartbeat(tui: *TuiData, event: uwa.Event, options: *uwa.Options) !void {
@@ -138,6 +189,7 @@ pub fn logHeartbeat(tui: *TuiData, event: uwa.Event, options: *uwa.Options) !voi
     }
     // _ = tui;
     _ = options;
-    try uwa.stdout.print("{s}", .{tui.currentState});
+
+    updateTui(tui, event);
     // tui.
 }
