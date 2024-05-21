@@ -50,7 +50,7 @@ fn runWakaTimeCli(filePath: []const u8, options: *uwa.Options) !void {
 //         update lastHeartbeat variable with current file and current time
 
 // returns true if a heartbeat was sent, false otherwise
-pub fn sendHeartbeat(lastHeartbeat: i64, options: *uwa.Options, event: uwa.Event) !bool {
+pub fn sendHeartbeat(lastHeartbeat: i64, options: *uwa.Options, event: uwa.Event, tui: *uwa.TuiData) !bool {
     const HEARTBEAT_INTERVAL = 1000 * 60 * 2; // 2 mins (in milliseconds)
     const currentTime = std.time.milliTimestamp();
 
@@ -61,9 +61,8 @@ pub fn sendHeartbeat(lastHeartbeat: i64, options: *uwa.Options, event: uwa.Event
     runWakaTimeCli(event.fileName, options) catch {
         @panic("Error sending event info to wakatime cli.");
     };
-    try uwa.stdout.print("Heartbeat sent for " ++
-        cli.TermFormat.GREEN ++ cli.TermFormat.BOLD ++ "{}" ++ cli.TermFormat.RESET ++
-        " on file {s}.\n", .{ event.etype, event.fileName });
+    try uwa.logHeartbeat(tui, event, options);
+
     return true;
 }
 
@@ -96,7 +95,7 @@ pub fn main() !void {
 
     var options = try cli.parseArgs(uwa.alloc);
     uwa.log.debug("Wakatime cli path: {s}", .{options.wakatimeCliPath});
-    try uwa.printCurrentState(&options);
+    var tui = try uwa.TuiData.init(&options);
 
     // add watch for all files in file list
 
@@ -109,7 +108,7 @@ pub fn main() !void {
             event.fileName,
         });
 
-        uwa.handleEvent(event, &options, &context) catch {
+        uwa.handleEvent(event, &options, &context, &tui) catch {
             try uwa.stderr.print("Error handling event {any}", .{event});
             @panic("Error handling event");
         };

@@ -124,6 +124,16 @@ pub const FileSet = struct {
     }
 };
 
+pub fn fileEql(file1: []const u8, file2: []const u8) bool {
+    const a = uwa.alloc;
+    const resolvedFile1 = try std.fs.path.resolve(a, &.{file1});
+    defer a.free(resolvedFile1);
+    const resolvedFile2 = try std.fs.path.resolve(a, &.{file2});
+    defer a.free(resolvedFile2);
+
+    return std.mem.eql(u8, resolvedFile1, resolvedFile2);
+}
+
 pub fn getFilesInFolder(folderPath: []const u8) !FileSet {
     var result = FileSet.init(uwa.alloc);
     // open folder

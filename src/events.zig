@@ -26,7 +26,7 @@ pub fn rebuildFileList(options: *uwa.Options, context: ?*uwa.Context) !uwa.Conte
 var lastEventTime: i64 = 0;
 var lastHeartbeat: i64 = 0;
 const DEBOUNCE_TIME = 5000; // 5 seconds
-pub fn handleEvent(event: uwa.Event, options: *uwa.Options, context: *uwa.Context) !void {
+pub fn handleEvent(event: uwa.Event, options: *uwa.Options, context: *uwa.Context, tui: *uwa.TuiData) !void {
     switch (event.etype) {
         uwa.EventType.FileChange => {
             const currentTime = std.time.milliTimestamp();
@@ -42,7 +42,7 @@ pub fn handleEvent(event: uwa.Event, options: *uwa.Options, context: *uwa.Contex
                 context.* = try rebuildFileList(options, context);
             }
 
-            const sent = try uwa.sendHeartbeat(lastHeartbeat, options, event);
+            const sent = try uwa.sendHeartbeat(lastHeartbeat, options, event, tui);
             if (sent) {
                 lastHeartbeat = currentTime;
             }
