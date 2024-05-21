@@ -113,12 +113,17 @@ pub fn createSortedFileList(fileSet: uwa.FileSet) FileHeartbeatMap {
     return fileMap;
 }
 
+fn concatFilesAndHeartbeats(fileMap: FileHeartbeatMap, file: []const u8) ![]const u8 {
+    return std.fmt.allocPrint(uwa.alloc, "{s} - {d}\n", .{ file, fileMap.get(file).? });
+}
+
 pub fn createInitialState(fileArray: FileHeartbeatMap) ![]const u8 {
     const fullStringPtr = uwa.alloc.create([]const u8) catch @panic("oom while handling tui");
     var fullString = fullStringPtr.*;
     fullString = "";
     for (fileArray.keys()) |file| {
-        fullString = concatStringsN(fullString, file);
+        const line = try concatFilesAndHeartbeats(fileArray, file);
+        fullString = concatStrings(fullString, line);
     }
 
     return fullString;
