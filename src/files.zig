@@ -53,7 +53,6 @@ pub const FileSet = struct {
     const BufSetHashMap = std.StringHashMap(void);
     pub const Iterator = BufSetHashMap.KeyIterator;
 
-    usingnamespace std;
     bufSet: BufSet,
     allocator: Allocator,
 

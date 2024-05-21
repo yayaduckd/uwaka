@@ -12,19 +12,20 @@ const Args = enum {
     gitRepo,
 };
 
+const ESC = "\x1B";
 pub const TermFormat = struct {
-    RED: []const u8 = "\x1b[31m",
-    GREEN: []const u8 = "\x1b[32m",
-    YELLOW: []const u8 = "\x1b[33m",
-    BLUE: []const u8 = "\x1b[34m",
-    MAGENTA: []const u8 = "\x1b[35m",
-    CYAN: []const u8 = "\x1b[36m",
-    WHITE: []const u8 = "\x1b[37m",
+    RED: []const u8 = ESC ++ "[31m",
+    GREEN: []const u8 = ESC ++ "[32m",
+    YELLOW: []const u8 = ESC ++ "[33m",
+    BLUE: []const u8 = ESC ++ "[34m",
+    MAGENTA: []const u8 = ESC ++ "[35m",
+    CYAN: []const u8 = ESC ++ "[36m",
+    WHITE: []const u8 = ESC ++ "[37m",
 
-    RESET: []const u8 = "\x1b[0m",
-    BOLD: []const u8 = "\x1b[1m",
-    UNDERLINE: []const u8 = "\x1b[4m",
-    INVERT: []const u8 = "\x1b[7m",
+    RESET: []const u8 = ESC ++ "[0m",
+    BOLD: []const u8 = ESC ++ "[1m",
+    UNDERLINE: []const u8 = ESC ++ "[4m",
+    INVERT: []const u8 = ESC ++ "[7m",
 }{};
 
 fn printHelp() void {

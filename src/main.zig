@@ -96,6 +96,7 @@ pub fn main() !void {
 
     var options = try cli.parseArgs(uwa.alloc);
     uwa.log.debug("Wakatime cli path: {s}", .{options.wakatimeCliPath});
+    try uwa.printCurrentState(&options);
 
     // add watch for all files in file list
 

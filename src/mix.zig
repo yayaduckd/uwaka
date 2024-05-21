@@ -15,6 +15,7 @@ pub usingnamespace osSpecificImplementation;
 pub usingnamespace @import("main.zig");
 pub usingnamespace @import("files.zig");
 pub usingnamespace @import("events.zig");
+pub usingnamespace @import("tui.zig");
 
 const uwa = @import("mix.zig");
 
