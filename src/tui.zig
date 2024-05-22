@@ -280,7 +280,7 @@ pub fn printEntireMap(tui: *TuiData) !void {
             }
             try uwa.stdout.print("{s}{s: <15} - {d}", .{
                 a.cursorToCol(pos.colsRight),
-                entry.key_ptr.*[0..MAX_FILE_LEN],
+                entry.key_ptr.*[0..@min(entry.key_ptr.len, MAX_FILE_LEN)],
                 entry.value_ptr.*,
             });
             if (pos.rowsDown > 0) {
