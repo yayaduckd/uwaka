@@ -15,6 +15,7 @@ pub const Ansi = struct {
 
     arena: std.heap.ArenaAllocator,
     // colors
+    BLACK: []const u8 = ESC ++ "[30m",
     RED: []const u8 = ESC ++ "[31m",
     GREEN: []const u8 = ESC ++ "[32m",
     YELLOW: []const u8 = ESC ++ "[33m",
@@ -22,6 +23,15 @@ pub const Ansi = struct {
     MAGENTA: []const u8 = ESC ++ "[35m",
     CYAN: []const u8 = ESC ++ "[36m",
     WHITE: []const u8 = ESC ++ "[37m",
+
+    BRIGHT_BLACK: []const u8 = ESC ++ "[1;30m",
+    BRIGHT_RED: []const u8 = ESC ++ "[1;31m",
+    BRIGHT_GREEN: []const u8 = ESC ++ "[1;32m",
+    BRIGHT_YELLOW: []const u8 = ESC ++ "[1;33m",
+    BRIGHT_BLUE: []const u8 = ESC ++ "[1;34m",
+    BRIGHT_MAGENTA: []const u8 = ESC ++ "[1;35m",
+    BRIGHT_CYAN: []const u8 = ESC ++ "[1;36m",
+    BRIGHT_WHITE: []const u8 = ESC ++ "[1;37m",
 
     // styles
     RESET: []const u8 = ESC ++ "[0m",
@@ -35,6 +45,10 @@ pub const Ansi = struct {
     // private modes
     HIDE_CURSOR: []const u8 = ESC ++ "[?25l",
     SHOW_CURSOR: []const u8 = ESC ++ "[?25h",
+
+    // custom
+    // red, yellow, bright yellow, green, blue
+    COLORFUL_UWAKA: []const u8 = ESC ++ "[31mu" ++ ESC ++ "[33mw" ++ ESC ++ "[1;33ma" ++ ESC ++ "[32mk" ++ ESC ++ "[34ma" ++ ESC ++ "[0m",
 
     // cursor
     fn cursorUp(self: *Ansi, n: usize) []const u8 {
@@ -170,7 +184,7 @@ pub const TuiData = struct {
         _ = uwa.c.signal(uwa.c.SIGWINCH, handleSignal);
         _ = uwa.c.signal(uwa.c.SIGINT, handleSignal);
 
-        try uwa.stdout.print("{s}", .{tg.ansi.HIDE_CURSOR});
+        // try uwa.stdout.print("{s}", .{tg.ansi.HIDE_CURSOR});
         try printEntireMap(&tg);
         return &tg;
     }
@@ -212,23 +226,23 @@ pub fn createSortedFileList(fileSet: uwa.FileSet) FileHeartbeatMap {
 }
 
 const Pos = struct {
-    rowsDown: u32,
-    colsRight: u32,
+    rowsDown: usize,
+    colsRight: usize,
 };
-fn getPosToPrintFile(tui: *TuiData, file: []const u8, termsize: TermSz) ?Pos {
-    const MAX_FILE_LEN = 15;
-    const SPACE_BTW_FILE_HEARTBEAT = 3;
-    const HEARTBEAT_SPACE = 3;
-    const SPACING = 5;
-    const TOTAL_ROW_LEN = MAX_FILE_LEN + SPACE_BTW_FILE_HEARTBEAT + HEARTBEAT_SPACE + SPACING;
-    const MAX_FILE_COLS = termsize.width / TOTAL_ROW_LEN;
+const MAX_FILE_LEN = 15;
+const SPACE_BTW_FILE_HEARTBEAT = 3;
+const HEARTBEAT_SPACE = 3;
+const SPACING = 5;
+const TOTAL_ROW_LEN = MAX_FILE_LEN + SPACE_BTW_FILE_HEARTBEAT + HEARTBEAT_SPACE + SPACING;
+fn getPosToPrintFile(tui: *TuiData, file: []const u8, termsize: TermSz, offsetDown: usize) ?Pos {
+    const maxFileCols = termsize.width / TOTAL_ROW_LEN;
 
-    const fileIndex = tui.fileMap.get(file).?;
-    const row = fileIndex / MAX_FILE_COLS;
-    const col = fileIndex % MAX_FILE_COLS;
+    const fileIndex = tui.fileMap.getIndex(file).?;
+    const row = (fileIndex / maxFileCols) + offsetDown;
+    const col = fileIndex % maxFileCols;
 
+    // uwa.stdout.print("{s}, {d} {d}        -   termsize {d} {d}\n", .{ file, row, col, termsize.width, termsize.height }) catch @panic("oom while handling tui");
     if (row >= termsize.height) {
-        uwa.log.debug("file out of range, {d} {d}", .{ row, col });
         return null;
     }
 
@@ -238,22 +252,42 @@ fn getPosToPrintFile(tui: *TuiData, file: []const u8, termsize: TermSz) ?Pos {
     };
 }
 
+pub fn setupFileArea(tui: *TuiData) !void {
+    var a = tui.ansi;
+    const t = tui.termsize;
+    var i: usize = 0;
+    while (i < t.height) {
+        try uwa.stdout.print("{s}{s}\n", .{
+            a.cursorToCol(0),
+            a.ERASE_TO_END_OF_LINE,
+        });
+        i += 1;
+    }
+    try uwa.stdout.print("{s}", .{a.cursorUpB(tui.termsize.height)});
+}
+
 pub fn printEntireMap(tui: *TuiData) !void {
+    var a = tui.ansi;
+
+    try setupFileArea(tui);
+    try uwa.stdout.print("{s}{s}", .{ tui.ansi.BOLD, a.COLORFUL_UWAKA });
     var iter = tui.fileMap.iterator();
     while (iter.next()) |entry| {
-        const posOrNull = getPosToPrintFile(tui, entry.key_ptr.*, tui.termsize);
+        const posOrNull = getPosToPrintFile(tui, entry.key_ptr.*, tui.termsize, 2);
         if (posOrNull) |pos| {
-            try uwa.stdout.print("{s}{s} - {d}{s}", .{
-                tui.ansi.cursorToPos(pos, tui.termsize),
-                entry.key_ptr.*,
+            if (pos.rowsDown > 0) {
+                try uwa.stdout.print("{s}", .{a.cursorDownB(pos.rowsDown)});
+            }
+            try uwa.stdout.print("{s}{s: <15} - {d}", .{
+                a.cursorToCol(pos.colsRight),
+                entry.key_ptr.*[0..MAX_FILE_LEN],
                 entry.value_ptr.*,
-                tui.ansi.cursorToPos(Pos{ .rowsDown = 0, .colsRight = 0 }, tui.termsize),
             });
+            if (pos.rowsDown > 0) {
+                try uwa.stdout.print("{s}", .{a.cursorUpB(pos.rowsDown)});
+            }
         }
     }
-
-    // // move cursor back to top right of map
-    // try uwa.stdout.print("{s}", .{tui.ansi.cursorUpB(tui.fileMap.count())});
 }
 
 pub fn printFileLine(tui: *TuiData, file: []const u8) !void {
@@ -309,10 +343,10 @@ pub fn logHeartbeat(tui: *TuiData, event: uwa.Event, options: *uwa.Options) !voi
             " on file {s}.\n", .{ event.etype, event.fileName });
         return;
     }
+    try tui.fileMap.put(event.fileName, tui.fileMap.get(event.fileName).? + 1);
     _ = options;
     var hasSIGWINCH = false;
     while (tui.sigmap.pop()) |sig| {
-        try uwa.stdout.print("{}", .{tui.sigmap});
         if (sig == uwa.c.SIGWINCH) {
             hasSIGWINCH = true;
         } else if (sig == uwa.c.SIGINT) {
@@ -323,7 +357,7 @@ pub fn logHeartbeat(tui: *TuiData, event: uwa.Event, options: *uwa.Options) !voi
     }
     if (hasSIGWINCH) {
         tui.termsize = try getTermSz(std.io.getStdOut().handle);
-        try uwa.stdout.print("Terminal size: {d}x{d}\n", .{ tui.termsize.width, tui.termsize.height });
+        // try uwa.stdout.print("Terminal size: {d}x{d}\n", .{ tui.termsize.width, tui.termsize.height });
     }
     try printEntireMap(tui);
 }

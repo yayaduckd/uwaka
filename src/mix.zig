@@ -46,6 +46,10 @@ pub var stderr: std.fs.File.Writer = blk: {
 
 pub const log = std.log.default;
 
+pub fn print(text: []const u8) void {
+    stdout.print("{s}", .{text}) catch @panic("error python printing");
+}
+
 pub const EventType = enum {
     FileChange,
     FileCreate,
