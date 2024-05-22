@@ -34,6 +34,7 @@ pub const Ansi = struct {
 
     // private modes
     HIDE_CURSOR: []const u8 = ESC ++ "[?25l",
+    SHOW_CURSOR: []const u8 = ESC ++ "[?25h",
 
     // cursor
     fn cursorUp(self: *Ansi, n: usize) []const u8 {
@@ -89,17 +90,90 @@ inline fn concatStringsN(str1: []const u8, str2: []const u8) []const u8 {
     return result;
 }
 
+const TuiGiver = struct {
+    pub fn giveTui(self: *TuiGiver) *TuiData {
+        if (self.tui) |ownedTui| {
+            return ownedTui;
+        } else {
+            @panic("TuiGiver not initialized");
+        }
+    }
+
+    tui: ?*TuiData,
+};
+var tg: TuiData = undefined;
+
+const SignalMap = struct {
+    signalPresent: bool = false,
+    numSIGINT: usize = 0,
+    numSIGWINCH: usize = 0,
+
+    pub fn signal(self: *SignalMap, sig: c_int) void {
+        switch (sig) {
+            uwa.c.SIGINT => self.numSIGINT += 1,
+            uwa.c.SIGWINCH => self.numSIGWINCH += 1,
+            else => {},
+        }
+        self.signalPresent = true;
+    }
+
+    pub fn popSignal(self: *SignalMap, sig: c_int) ?c_int {
+        var result: ?c_int = null;
+        switch (sig) {
+            uwa.c.SIGINT => {
+                self.numSIGINT -= 1;
+                result = uwa.c.SIGINT;
+            },
+            uwa.c.SIGWINCH => {
+                self.numSIGWINCH -= 1;
+                result = uwa.c.SIGWINCH;
+            },
+            else => {},
+        }
+        if (self.numSIGINT == 0 and self.numSIGWINCH == 0) {
+            self.signalPresent = false;
+        }
+        return result;
+    }
+
+    pub fn pop(self: *SignalMap) ?c_int {
+        if (!self.signalPresent) {
+            return null;
+        } else if (self.numSIGINT > 0) {
+            return self.popSignal(uwa.c.SIGINT);
+        } else if (self.numSIGWINCH > 0) {
+            return self.popSignal(uwa.c.SIGWINCH);
+        } else unreachable;
+    }
+};
+
+fn handleSignal(sig: c_int) callconv(.C) void {
+    tg.sigmap.signal(sig);
+}
+
 pub const TuiData = struct {
     fileMap: FileHeartbeatMap,
     ansi: Ansi,
+    sigmap: *SignalMap,
+    alloc: std.mem.Allocator = uwa.alloc,
 
-    pub fn init(options: *uwa.Options) !TuiData {
-        var tui = TuiData{
+    pub fn init(options: *uwa.Options) !*TuiData {
+        const sigmap = SignalMap{};
+        const sigmapPtr = try uwa.alloc.create(SignalMap);
+        sigmapPtr.* = sigmap;
+
+        tg = TuiData{
             .fileMap = createSortedFileList(options.fileSet),
             .ansi = Ansi.init(uwa.alloc),
+            .sigmap = sigmapPtr,
         };
-        try printEntireMap(&tui);
-        return tui;
+
+        _ = uwa.c.signal(uwa.c.SIGWINCH, handleSignal);
+        _ = uwa.c.signal(uwa.c.SIGINT, handleSignal);
+
+        try uwa.stdout.print("{s}", .{tg.ansi.HIDE_CURSOR});
+        try printEntireMap(&tg);
+        return &tg;
     }
 };
 
@@ -139,9 +213,6 @@ pub fn createSortedFileList(fileSet: uwa.FileSet) FileHeartbeatMap {
 }
 
 pub fn printEntireMap(tui: *TuiData) !void {
-    // cursor setup
-    try uwa.stdout.print("{s}", .{tui.ansi.HIDE_CURSOR});
-
     var iter = tui.fileMap.iterator();
     while (iter.next()) |entry| {
         try uwa.stdout.print("{s} - {d}\n", .{ entry.key_ptr.*, entry.value_ptr.* });
@@ -180,6 +251,23 @@ fn updateTui(tui: *TuiData, event: uwa.Event) void {
     }
 }
 
+const TermSz = struct {
+    height: u16,
+    width: u16,
+};
+
+pub fn getTermSz(tty: i32) !TermSz {
+    var winsz = std.c.winsize{ .ws_col = 0, .ws_row = 0, .ws_xpixel = 0, .ws_ypixel = 0 };
+
+    const rv = std.c.ioctl(tty, uwa.c.TIOCGWINSZ, &winsz);
+    const err = std.posix.errno(rv);
+    if (rv == 0) {
+        return TermSz{ .height = winsz.ws_row, .width = winsz.ws_col };
+    } else {
+        return std.posix.unexpectedErrno(err);
+    }
+}
+
 pub fn logHeartbeat(tui: *TuiData, event: uwa.Event, options: *uwa.Options) !void {
     if (false) {
         try uwa.stdout.print("Heartbeat sent for " ++
@@ -187,9 +275,20 @@ pub fn logHeartbeat(tui: *TuiData, event: uwa.Event, options: *uwa.Options) !voi
             " on file {s}.\n", .{ event.etype, event.fileName });
         return;
     }
-    // _ = tui;
     _ = options;
-
-    updateTui(tui, event);
-    // tui.
+    var hasSIGWINCH = false;
+    while (tui.sigmap.pop()) |sig| {
+        try uwa.stdout.print("{}", .{tui.sigmap});
+        if (sig == uwa.c.SIGWINCH) {
+            hasSIGWINCH = true;
+        } else if (sig == uwa.c.SIGINT) {
+            try uwa.stdout.print("SIGINT received, exiting...\n", .{});
+            try uwa.stdout.print("{s}", .{tui.ansi.SHOW_CURSOR});
+            std.process.exit(0);
+        }
+    }
+    if (hasSIGWINCH) {
+        const termSz = try getTermSz(std.io.getStdOut().handle);
+        try uwa.stdout.print("Terminal size: {d}x{d}\n", .{ termSz.width, termSz.height });
+    }
 }

@@ -95,7 +95,7 @@ pub fn main() !void {
 
     var options = try cli.parseArgs(uwa.alloc);
     uwa.log.debug("Wakatime cli path: {s}", .{options.wakatimeCliPath});
-    var tui = try uwa.TuiData.init(&options);
+    const tui = try uwa.TuiData.init(&options);
 
     // add watch for all files in file list
 
@@ -108,7 +108,7 @@ pub fn main() !void {
             event.fileName,
         });
 
-        uwa.handleEvent(event, &options, &context, &tui) catch {
+        uwa.handleEvent(event, &options, &context, tui) catch {
             try uwa.stderr.print("Error handling event {any}", .{event});
             @panic("Error handling event");
         };
