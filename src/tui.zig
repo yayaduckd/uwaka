@@ -66,6 +66,14 @@ pub const Ansi = struct {
             @panic("printing cursor_down failed");
         };
     }
+
+    fn cursorToPos(self: *Ansi, pos: Pos, termsize: TermSz) []const u8 {
+        const row = (termsize.height - 1) - pos.rowsDown;
+        const col = pos.colsRight;
+        return std.fmt.allocPrint(self.arena.allocator(), "{s}{s}{d};{d}{s}", .{ ESC, "[", row, col, "H" }) catch {
+            @panic("printing cursor_down failed");
+        };
+    }
 };
 
 fn compareStrings(lhs: []const u8, rhs: []const u8) bool {
@@ -156,7 +164,7 @@ pub const TuiData = struct {
             .fileMap = createSortedFileList(options.fileSet),
             .ansi = Ansi.init(uwa.alloc),
             .sigmap = sigmapPtr,
-            .termsize = getTermSz(std.io.getStdOut()),
+            .termsize = try getTermSz(std.io.getStdOut().handle),
         };
 
         _ = uwa.c.signal(uwa.c.SIGWINCH, handleSignal);
@@ -203,14 +211,49 @@ pub fn createSortedFileList(fileSet: uwa.FileSet) FileHeartbeatMap {
     return fileMap;
 }
 
+const Pos = struct {
+    rowsDown: u32,
+    colsRight: u32,
+};
+fn getPosToPrintFile(tui: *TuiData, file: []const u8, termsize: TermSz) ?Pos {
+    const MAX_FILE_LEN = 15;
+    const SPACE_BTW_FILE_HEARTBEAT = 3;
+    const HEARTBEAT_SPACE = 3;
+    const SPACING = 5;
+    const TOTAL_ROW_LEN = MAX_FILE_LEN + SPACE_BTW_FILE_HEARTBEAT + HEARTBEAT_SPACE + SPACING;
+    const MAX_FILE_COLS = termsize.width / TOTAL_ROW_LEN;
+
+    const fileIndex = tui.fileMap.get(file).?;
+    const row = fileIndex / MAX_FILE_COLS;
+    const col = fileIndex % MAX_FILE_COLS;
+
+    if (row >= termsize.height) {
+        uwa.log.debug("file out of range, {d} {d}", .{ row, col });
+        return null;
+    }
+
+    return Pos{
+        .rowsDown = row,
+        .colsRight = col * TOTAL_ROW_LEN,
+    };
+}
+
 pub fn printEntireMap(tui: *TuiData) !void {
     var iter = tui.fileMap.iterator();
     while (iter.next()) |entry| {
-        try uwa.stdout.print("{s} - {d}\n", .{ entry.key_ptr.*, entry.value_ptr.* });
+        const posOrNull = getPosToPrintFile(tui, entry.key_ptr.*, tui.termsize);
+        if (posOrNull) |pos| {
+            try uwa.stdout.print("{s}{s} - {d}{s}", .{
+                tui.ansi.cursorToPos(pos, tui.termsize),
+                entry.key_ptr.*,
+                entry.value_ptr.*,
+                tui.ansi.cursorToPos(Pos{ .rowsDown = 0, .colsRight = 0 }, tui.termsize),
+            });
+        }
     }
 
-    // move cursor back to top right of map
-    try uwa.stdout.print("{s}", .{tui.ansi.cursorUpB(tui.fileMap.count())});
+    // // move cursor back to top right of map
+    // try uwa.stdout.print("{s}", .{tui.ansi.cursorUpB(tui.fileMap.count())});
 }
 
 pub fn printFileLine(tui: *TuiData, file: []const u8) !void {
@@ -282,4 +325,5 @@ pub fn logHeartbeat(tui: *TuiData, event: uwa.Event, options: *uwa.Options) !voi
         tui.termsize = try getTermSz(std.io.getStdOut().handle);
         try uwa.stdout.print("Terminal size: {d}x{d}\n", .{ tui.termsize.width, tui.termsize.height });
     }
+    try printEntireMap(tui);
 }
