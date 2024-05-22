@@ -90,17 +90,6 @@ inline fn concatStringsN(str1: []const u8, str2: []const u8) []const u8 {
     return result;
 }
 
-const TuiGiver = struct {
-    pub fn giveTui(self: *TuiGiver) *TuiData {
-        if (self.tui) |ownedTui| {
-            return ownedTui;
-        } else {
-            @panic("TuiGiver not initialized");
-        }
-    }
-
-    tui: ?*TuiData,
-};
 var tg: TuiData = undefined;
 
 const SignalMap = struct {
@@ -155,6 +144,7 @@ pub const TuiData = struct {
     fileMap: FileHeartbeatMap,
     ansi: Ansi,
     sigmap: *SignalMap,
+    termsize: TermSz,
     alloc: std.mem.Allocator = uwa.alloc,
 
     pub fn init(options: *uwa.Options) !*TuiData {
@@ -166,6 +156,7 @@ pub const TuiData = struct {
             .fileMap = createSortedFileList(options.fileSet),
             .ansi = Ansi.init(uwa.alloc),
             .sigmap = sigmapPtr,
+            .termsize = getTermSz(std.io.getStdOut()),
         };
 
         _ = uwa.c.signal(uwa.c.SIGWINCH, handleSignal);
@@ -288,7 +279,7 @@ pub fn logHeartbeat(tui: *TuiData, event: uwa.Event, options: *uwa.Options) !voi
         }
     }
     if (hasSIGWINCH) {
-        const termSz = try getTermSz(std.io.getStdOut().handle);
-        try uwa.stdout.print("Terminal size: {d}x{d}\n", .{ termSz.width, termSz.height });
+        tui.termsize = try getTermSz(std.io.getStdOut().handle);
+        try uwa.stdout.print("Terminal size: {d}x{d}\n", .{ tui.termsize.width, tui.termsize.height });
     }
 }
