@@ -258,8 +258,11 @@ pub fn getTermSz(tty: std.posix.fd_t) !TermSz {
             return std.posix.unexpectedErrno(err);
         }
     } else {
-        // return standard VT100 size
-        return TermSz{ .height = 24, .width = 80 };
+        const windows = std.os.windows;
+        var info: windows.CONSOLE_SCREEN_BUFFER_INFO = undefined;
+        if (windows.kernel32.GetConsoleScreenBufferInfo(tty, &info) != windows.TRUE)
+            return error.Unexpected;
+        return TermSz{ .height = @intCast(info.dwSize.Y), .width = @intCast(info.dwSize.X) };
     }
 }
 
