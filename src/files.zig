@@ -22,6 +22,7 @@ pub fn getFilesInGitRepo(repoPath: []const u8) !FileSet {
 
     const gitFiles = gitFilesResult.stdout;
 
+    const cwd = std.fs.cwd();
     // split by newline
     var lines = std.mem.split(u8, gitFiles, "\n");
     while (lines.next()) |line| {
@@ -29,6 +30,10 @@ pub fn getFilesInGitRepo(repoPath: []const u8) !FileSet {
             continue;
         }
         const fullPath: []u8 = try std.fs.path.join(uwa.alloc, &.{ resolvedRepoPath, line });
+        const stat = try cwd.statFile(fullPath);
+        if (stat.kind == .directory) {
+            continue;
+        }
         try files.insert(fullPath);
         uwa.alloc.free(fullPath);
     }
