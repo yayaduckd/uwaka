@@ -87,11 +87,11 @@ pub fn shutdown(context: *uwa.Context, options: *uwa.Options) void {
 
 pub fn main() !void {
     // initialize writer
-    if (std.mem.eql(u8, uwa.osTag, "windows")) {
+    if (uwa.osTag == .windows) {
         uwa.stdout = std.io.getStdOut().writer();
         uwa.stderr = std.io.getStdErr().writer();
     }
-    uwa.log.info("Running on {s}", .{uwa.osTag});
+    uwa.log.info("Running on {s}", .{@tagName(uwa.osTag)});
 
     var options = try cli.parseArgs(uwa.alloc);
     uwa.log.debug("Wakatime cli path: {s}", .{options.wakatimeCliPath});
@@ -100,6 +100,19 @@ pub fn main() !void {
     // add watch for all files in file list
 
     var context = try uwa.initWatching(&options);
+
+    pub const EventQueue = struct {
+        events: std.ArrayList(uwa.Event),
+        mutex: std.Thread.Mutex,
+
+        pub fn init(alloc: std.mem.Allocator) EventQueue {
+            return EventQueue{
+                .events = std.ArrayList(uwa.Event).init(alloc),
+                .mutex = std.Thread.Mutex.init,
+            };
+        }
+    };
+
     // main loop
     while (true) {
         const event = try uwa.nextEvent(&context, &options);

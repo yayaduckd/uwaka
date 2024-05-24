@@ -1,18 +1,23 @@
 const std = @import("std");
 const buildOptions = @import("build_options");
 
-pub const c = @cImport({
-    @cInclude("signal.h");
-    @cInclude("sys/ioctl.h");
-});
-
-pub const osTag = @tagName(@import("builtin").os.tag);
+pub const osTag = @import("builtin").os.tag;
 
 const osSpecificImplementation = blk: {
     const ws = buildOptions.@"build.build.WatchSystem";
     switch (buildOptions.watch_system) {
         ws.inotify => break :blk @import("linux.zig"),
         ws.posix => break :blk @import("posix.zig"),
+    }
+};
+
+pub const c = blk: {
+    if (osTag != .linux and osTag != .windows) {
+        break :blk @cImport({
+            @cInclude("sys/ioctl.h");
+        });
+    } else {
+        break :blk undefined;
     }
 };
 
@@ -28,16 +33,14 @@ pub const NAME = "uwaka";
 pub const VERSION = "0.4.1";
 
 pub var stdout: std.fs.File.Writer = blk: {
-    const tag = @tagName(@import("builtin").os.tag);
-    if (!std.mem.eql(u8, tag, "windows")) {
+    if (!(osTag == .windows)) {
         break :blk std.io.getStdOut().writer();
     } else {
         break :blk undefined;
     }
 };
 pub var stderr: std.fs.File.Writer = blk: {
-    const tag = @tagName(@import("builtin").os.tag);
-    if (!std.mem.eql(u8, tag, "windows")) {
+    if (!(osTag == .windows)) {
         break :blk std.io.getStdErr().writer();
     } else {
         break :blk undefined;

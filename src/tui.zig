@@ -114,77 +114,19 @@ inline fn concatStringsN(str1: []const u8, str2: []const u8) []const u8 {
 
 var tg: TuiData = undefined;
 
-const SignalMap = struct {
-    signalPresent: bool = false,
-    numSIGINT: usize = 0,
-    numSIGWINCH: usize = 0,
-
-    pub fn signal(self: *SignalMap, sig: c_int) void {
-        switch (sig) {
-            uwa.c.SIGINT => self.numSIGINT += 1,
-            uwa.c.SIGWINCH => self.numSIGWINCH += 1,
-            else => {},
-        }
-        self.signalPresent = true;
-    }
-
-    pub fn popSignal(self: *SignalMap, sig: c_int) ?c_int {
-        var result: ?c_int = null;
-        switch (sig) {
-            uwa.c.SIGINT => {
-                self.numSIGINT -= 1;
-                result = uwa.c.SIGINT;
-            },
-            uwa.c.SIGWINCH => {
-                self.numSIGWINCH -= 1;
-                result = uwa.c.SIGWINCH;
-            },
-            else => {},
-        }
-        if (self.numSIGINT == 0 and self.numSIGWINCH == 0) {
-            self.signalPresent = false;
-        }
-        return result;
-    }
-
-    pub fn pop(self: *SignalMap) ?c_int {
-        if (!self.signalPresent) {
-            return null;
-        } else if (self.numSIGINT > 0) {
-            return self.popSignal(uwa.c.SIGINT);
-        } else if (self.numSIGWINCH > 0) {
-            return self.popSignal(uwa.c.SIGWINCH);
-        } else unreachable;
-    }
-};
-
-fn handleSignal(sig: c_int) callconv(.C) void {
-    tg.sigmap.signal(sig);
-}
-
 pub const TuiData = struct {
     fileMap: FileHeartbeatMap,
     ansi: Ansi,
-    sigmap: *SignalMap,
     termsize: TermSz,
     alloc: std.mem.Allocator = uwa.alloc,
 
     pub fn init(options: *uwa.Options) !*TuiData {
-        const sigmap = SignalMap{};
-        const sigmapPtr = try uwa.alloc.create(SignalMap);
-        sigmapPtr.* = sigmap;
-
         tg = TuiData{
             .fileMap = createSortedFileList(options.fileSet),
             .ansi = Ansi.init(uwa.alloc),
-            .sigmap = sigmapPtr,
             .termsize = try getTermSz(std.io.getStdOut().handle),
         };
 
-        _ = uwa.c.signal(uwa.c.SIGWINCH, handleSignal);
-        _ = uwa.c.signal(uwa.c.SIGINT, handleSignal);
-
-        // try uwa.stdout.print("{s}", .{tg.ansi.HIDE_CURSOR});
         try printEntireMap(&tg);
         return &tg;
     }
@@ -324,15 +266,25 @@ const TermSz = struct {
     width: u16,
 };
 
-pub fn getTermSz(tty: i32) !TermSz {
-    var winsz = std.c.winsize{ .ws_col = 0, .ws_row = 0, .ws_xpixel = 0, .ws_ypixel = 0 };
-
-    const rv = std.c.ioctl(tty, uwa.c.TIOCGWINSZ, &winsz);
-    const err = std.posix.errno(rv);
-    if (rv == 0) {
-        return TermSz{ .height = winsz.ws_row, .width = winsz.ws_col };
+pub fn getTermSz(tty: std.posix.fd_t) !TermSz {
+    if (uwa.osTag != .windows) {
+        var winsz = std.posix.winsize{ .ws_col = 0, .ws_row = 0, .ws_xpixel = 0, .ws_ypixel = 0 };
+        const rv = blk: {
+            if (uwa.osTag == .linux) {
+                break :blk std.os.linux.ioctl(tty, std.os.linux.T.IOCGWINSZ, @intFromPtr(&winsz));
+            } else {
+                break :blk std.c.ioctl(tty, uwa.c.TIOCGWINSZ, &winsz);
+            }
+        };
+        const err = std.posix.errno(rv);
+        if (rv == 0) {
+            return TermSz{ .height = winsz.ws_row, .width = winsz.ws_col };
+        } else {
+            return std.posix.unexpectedErrno(err);
+        }
     } else {
-        return std.posix.unexpectedErrno(err);
+        // return standard VT100 size
+        return TermSz{ .height = 24, .width = 80 };
     }
 }
 
@@ -345,19 +297,11 @@ pub fn logHeartbeat(tui: *TuiData, event: uwa.Event, options: *uwa.Options) !voi
     }
     try tui.fileMap.put(event.fileName, tui.fileMap.get(event.fileName).? + 1);
     _ = options;
-    var hasSIGWINCH = false;
-    while (tui.sigmap.pop()) |sig| {
-        if (sig == uwa.c.SIGWINCH) {
-            hasSIGWINCH = true;
-        } else if (sig == uwa.c.SIGINT) {
-            try uwa.stdout.print("SIGINT received, exiting...\n", .{});
-            try uwa.stdout.print("{s}", .{tui.ansi.SHOW_CURSOR});
-            std.process.exit(0);
-        }
+    const newTermSz = try getTermSz(std.io.getStdOut().handle);
+    if (newTermSz.height != tui.termsize.height or newTermSz.width != tui.termsize.width) {
+        tui.termsize = newTermSz;
+        try printEntireMap(tui);
     }
-    if (hasSIGWINCH) {
-        tui.termsize = try getTermSz(std.io.getStdOut().handle);
-        // try uwa.stdout.print("Terminal size: {d}x{d}\n", .{ tui.termsize.width, tui.termsize.height });
-    }
+    // should just update the file line
     try printEntireMap(tui);
 }
