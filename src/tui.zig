@@ -41,6 +41,7 @@ pub const Ansi = struct {
 
     //erase
     ERASE_TO_END_OF_LINE: []const u8 = ESC ++ "[K",
+    ERASE_SCREEN: []const u8 = ESC ++ "[2J",
 
     // private modes
     HIDE_CURSOR: []const u8 = ESC ++ "[?25l",
@@ -51,6 +52,7 @@ pub const Ansi = struct {
     COLORFUL_UWAKA: []const u8 = ESC ++ "[31mu" ++ ESC ++ "[33mw" ++ ESC ++ "[1;33ma" ++ ESC ++ "[32mk" ++ ESC ++ "[34ma" ++ ESC ++ "[0m",
 
     // cursor
+    CURSOR_HOME: []const u8 = ESC ++ "[H",
     fn cursorUp(self: *Ansi, n: usize) []const u8 {
         return std.fmt.allocPrint(self.arena.allocator(), "{s}{s}{d}{s}", .{ ESC, "[", n, "A" }) catch {
             @panic("printing cursor_up failed");
@@ -117,14 +119,15 @@ var tg: TuiData = undefined;
 pub const TuiData = struct {
     fileMap: FileHeartbeatMap,
     ansi: Ansi,
-    termsize: TermSz,
+    rowscols: TermSz,
     alloc: std.mem.Allocator = uwa.alloc,
 
     pub fn init(options: *uwa.Options) !*TuiData {
+        var fileMap = createSortedFileList(options.fileSet);
         tg = TuiData{
-            .fileMap = createSortedFileList(options.fileSet),
+            .fileMap = fileMap,
             .ansi = Ansi.init(uwa.alloc),
-            .termsize = try getTermSz(std.io.getStdOut().handle),
+            .rowscols = getNumRowsAndCols(&fileMap, try getTermSz(std.io.getStdOut().handle)),
         };
 
         try printEntireMap(&tg);
@@ -171,22 +174,28 @@ const Pos = struct {
     rowsDown: usize,
     colsRight: usize,
 };
+
 const MAX_FILE_LEN = 15;
 const SPACE_BTW_FILE_HEARTBEAT = 3;
 const HEARTBEAT_SPACE = 3;
 const SPACING = 5;
 const TOTAL_ROW_LEN = MAX_FILE_LEN + SPACE_BTW_FILE_HEARTBEAT + HEARTBEAT_SPACE + SPACING;
-fn getPosToPrintFile(tui: *TuiData, file: []const u8, termsize: TermSz, offsetDown: usize) ?Pos {
+fn getNumRowsAndCols(map: *FileHeartbeatMap, termsize: TermSz) TermSz {
     const maxFileCols = termsize.width / TOTAL_ROW_LEN;
+    if (maxFileCols == 0) return TermSz{ .height = 0, .width = 0 };
+    const maxFileRows = (map.count() + maxFileCols - 1) / maxFileCols;
+    return TermSz{
+        .height = @intCast(maxFileRows),
+        .width = @intCast(maxFileCols),
+    };
+}
 
+fn getPosToPrintFile(tui: *TuiData, file: []const u8, rowscols: TermSz, offsetDown: usize) ?Pos {
     const fileIndex = tui.fileMap.getIndex(file).?;
-    const row = (fileIndex / maxFileCols) + offsetDown;
-    const col = fileIndex % maxFileCols;
+    if (fileIndex >= rowscols.width * rowscols.height) return null;
 
-    // uwa.stdout.print("{s}, {d} {d}        -   termsize {d} {d}\n", .{ file, row, col, termsize.width, termsize.height }) catch @panic("oom while handling tui");
-    if (row >= termsize.height) {
-        return null;
-    }
+    const row = (fileIndex / rowscols.width) + offsetDown;
+    const col = (fileIndex % rowscols.width);
 
     return Pos{
         .rowsDown = row,
@@ -195,17 +204,8 @@ fn getPosToPrintFile(tui: *TuiData, file: []const u8, termsize: TermSz, offsetDo
 }
 
 pub fn setupFileArea(tui: *TuiData) !void {
-    var a = tui.ansi;
-    const t = tui.termsize;
-    var i: usize = 0;
-    while (i < t.height) {
-        try uwa.stdout.print("{s}{s}\n", .{
-            a.cursorToCol(0),
-            a.ERASE_TO_END_OF_LINE,
-        });
-        i += 1;
-    }
-    try uwa.stdout.print("{s}", .{a.cursorUpB(tui.termsize.height)});
+    const a = tui.ansi;
+    try uwa.stdout.print("{s}{s}", .{ a.ERASE_SCREEN, a.CURSOR_HOME });
 }
 
 pub fn printEntireMap(tui: *TuiData) !void {
@@ -213,6 +213,9 @@ pub fn printEntireMap(tui: *TuiData) !void {
 
     try setupFileArea(tui);
     try uwa.stdout.print("{s}{s}", .{ tui.ansi.BOLD, a.COLORFUL_UWAKA });
+    if (tui.rowscols.height == 0 or tui.rowscols.width == 0) {
+        return;
+    }
     var iter = tui.fileMap.iterator();
     while (iter.next()) |entry| {
         try printFileLine(tui, entry.key_ptr.*, entry.value_ptr.*);
@@ -221,7 +224,7 @@ pub fn printEntireMap(tui: *TuiData) !void {
 
 pub fn printFileLine(tui: *TuiData, file: []const u8, heartbeats: u32) !void {
     var a = tui.ansi;
-    const posOrNull = getPosToPrintFile(tui, file, tui.termsize, 2);
+    const posOrNull = getPosToPrintFile(tui, file, tui.rowscols, 2);
     if (posOrNull) |pos| {
         if (pos.rowsDown > 0) {
             try uwa.stdout.print("{s}", .{a.cursorDownB(pos.rowsDown)});
@@ -269,8 +272,9 @@ pub fn getTermSz(tty: std.posix.fd_t) !TermSz {
 
 pub fn updateTui(tui: *TuiData, event: ?uwa.Event, isHeartbeat: bool) !void {
     const newTermSz = try getTermSz(std.io.getStdOut().handle);
-    if (newTermSz.height != tui.termsize.height or newTermSz.width != tui.termsize.width) {
-        tui.termsize = newTermSz;
+    const maxRowsCols = getNumRowsAndCols(&tui.fileMap, newTermSz);
+    if (maxRowsCols.height != tui.rowscols.height or maxRowsCols.width != tui.rowscols.width) {
+        tui.rowscols = maxRowsCols;
         try printEntireMap(tui);
     }
     if (!isHeartbeat) return;
