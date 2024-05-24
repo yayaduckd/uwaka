@@ -122,13 +122,13 @@ pub fn main() !void {
             };
         }
         if (tui) |t| {
-            try uwa.updateTui(t, event);
+            try uwa.updateTui(t, event, heartbeatSent);
         } else if (heartbeatSent) {
             try uwa.stdout.print("Heartbeat sent for " ++
                 uwa.TermFormat.GREEN ++ uwa.TermFormat.BOLD ++ "{}" ++ uwa.TermFormat.RESET ++
                 " on file {s}.\n", .{ event.?.etype, event.?.fileName });
         }
-        std.time.sleep(1000000 * 1000); // 10ms
+        std.time.sleep(1000000 * 10); // 10ms
     }
 }
 

@@ -209,31 +209,32 @@ pub fn setupFileArea(tui: *TuiData) !void {
 }
 
 pub fn printEntireMap(tui: *TuiData) !void {
-    var a = tui.ansi;
+    const a = tui.ansi;
 
     try setupFileArea(tui);
     try uwa.stdout.print("{s}{s}", .{ tui.ansi.BOLD, a.COLORFUL_UWAKA });
     var iter = tui.fileMap.iterator();
     while (iter.next()) |entry| {
-        const posOrNull = getPosToPrintFile(tui, entry.key_ptr.*, tui.termsize, 2);
-        if (posOrNull) |pos| {
-            if (pos.rowsDown > 0) {
-                try uwa.stdout.print("{s}", .{a.cursorDownB(pos.rowsDown)});
-            }
-            try uwa.stdout.print("{s}{s: <15} - {d}", .{
-                a.cursorToCol(pos.colsRight),
-                entry.key_ptr.*[0..@min(entry.key_ptr.len, MAX_FILE_LEN)],
-                entry.value_ptr.*,
-            });
-            if (pos.rowsDown > 0) {
-                try uwa.stdout.print("{s}", .{a.cursorUpB(pos.rowsDown)});
-            }
-        }
+        try printFileLine(tui, entry.key_ptr.*, entry.value_ptr.*);
     }
 }
 
-pub fn printFileLine(tui: *TuiData, file: []const u8) !void {
-    try uwa.stdout.print("{s} - {d}{s}", .{ file, tui.fileMap.get(file).?, tui.ansi.cursorToCol(0) });
+pub fn printFileLine(tui: *TuiData, file: []const u8, heartbeats: u32) !void {
+    var a = tui.ansi;
+    const posOrNull = getPosToPrintFile(tui, file, tui.termsize, 2);
+    if (posOrNull) |pos| {
+        if (pos.rowsDown > 0) {
+            try uwa.stdout.print("{s}", .{a.cursorDownB(pos.rowsDown)});
+        }
+        try uwa.stdout.print("{s}{s: <15} - {d}", .{
+            a.cursorToCol(pos.colsRight),
+            file[0..@min(file.len, MAX_FILE_LEN)],
+            heartbeats,
+        });
+        if (pos.rowsDown > 0) {
+            try uwa.stdout.print("{s}", .{a.cursorUpB(pos.rowsDown)});
+        }
+    }
 }
 
 const TermSz = struct {
@@ -266,16 +267,18 @@ pub fn getTermSz(tty: std.posix.fd_t) !TermSz {
     }
 }
 
-pub fn updateTui(tui: *TuiData, event: ?uwa.Event) !void {
+pub fn updateTui(tui: *TuiData, event: ?uwa.Event, isHeartbeat: bool) !void {
     const newTermSz = try getTermSz(std.io.getStdOut().handle);
     if (newTermSz.height != tui.termsize.height or newTermSz.width != tui.termsize.width) {
         tui.termsize = newTermSz;
         try printEntireMap(tui);
     }
+    if (!isHeartbeat) return;
     if (event) |e| {
         try tui.fileMap.put(e.fileName, tui.fileMap.get(e.fileName).? + 1);
+        // should just update the file line
+        const entry = tui.fileMap.getEntry(e.fileName).?;
+        try printFileLine(tui, entry.key_ptr.*, entry.value_ptr.*);
         return;
     }
-    // should just update the file line
-    try printEntireMap(tui);
 }
