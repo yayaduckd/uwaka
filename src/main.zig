@@ -3,6 +3,45 @@ const std = @import("std");
 const uwa = @import("mix.zig");
 const cli = @import("cli.zig");
 
+pub const std_options = .{
+    .logFn = myLogFn,
+};
+
+pub fn myLogFn(
+    comptime level: std.log.Level,
+    comptime scope: @TypeOf(.EnumLiteral),
+    comptime format: []const u8,
+    args: anytype,
+) void {
+    const logFile = "uwaka.log";
+    const cwd = std.fs.cwd();
+    var createdFile = cwd.openFile(logFile, .{ .lock = .exclusive, .mode = .write_only });
+    if (createdFile) |_| {} else |err| {
+        if (err == std.fs.File.OpenError.FileNotFound) {
+            createdFile = cwd.createFile(logFile, .{
+                .truncate = false,
+                .lock = .exclusive,
+            }) catch |err2| {
+                std.debug.print("Error creating log file: {}\n", .{err2});
+                return;
+            };
+        }
+    }
+    const file = createdFile catch {
+        @panic("error logging");
+    };
+
+    defer file.close();
+    file.seekFromEnd(0) catch {};
+    const writer = file.writer();
+
+    // timestamp
+    const timestamp = std.time.milliTimestamp();
+    writer.print("[{d}] {s}({s}): ", .{ timestamp, level.asText(), @tagName(scope) }) catch {};
+    writer.print(format, args) catch {};
+    _ = writer.write("\n") catch {};
+}
+
 fn runWakaTimeCli(filePath: []const u8, options: *uwa.Options) !void {
     // run wakatime-cli
 
@@ -90,7 +129,7 @@ pub fn main() !void {
         uwa.stdout = std.io.getStdOut().writer();
         uwa.stderr = std.io.getStdErr().writer();
     }
-    uwa.log.info("Running on {s}", .{@tagName(uwa.osTag)});
+    uwa.log.info("\n\n\n\n\nRunning on {s}", .{@tagName(uwa.osTag)});
 
     var options = try cli.parseArgs(uwa.alloc);
     uwa.log.debug("Wakatime cli path: {s}", .{options.wakatimeCliPath});
