@@ -236,31 +236,6 @@ pub fn printFileLine(tui: *TuiData, file: []const u8) !void {
     try uwa.stdout.print("{s} - {d}{s}", .{ file, tui.fileMap.get(file).?, tui.ansi.cursorToCol(0) });
 }
 
-fn updateTui(tui: *TuiData, event: uwa.Event) void {
-    // update fileMap
-    const file = event.fileName;
-    var fileMap = tui.fileMap;
-    const fileEntry = fileMap.get(file).?;
-    fileMap.put(file, fileEntry + 1) catch @panic("oom");
-
-    // update terminal
-    var a = tui.ansi;
-    const fileIndex = fileMap.getIndex(file).?;
-    // assume cursor is at the top right of the file list
-    if (fileIndex > 0) {
-        // go down to the row with the file
-        uwa.stdout.print("{s}", .{a.cursorDownB(fileIndex)}) catch @panic("printing failed");
-    }
-    // erase the line go back up
-    uwa.stdout.print("{s}", .{a.ERASE_TO_END_OF_LINE}) catch @panic("printing failed");
-    // print the new line
-    printFileLine(tui, file) catch @panic("printing failed");
-    if (fileIndex > 0) {
-        // go back up to the top right
-        uwa.stdout.print("{s}", .{a.cursorUpB(fileIndex)}) catch @panic("printing failed");
-    }
-}
-
 const TermSz = struct {
     height: u16,
     width: u16,
@@ -288,20 +263,25 @@ pub fn getTermSz(tty: std.posix.fd_t) !TermSz {
     }
 }
 
-pub fn logHeartbeat(tui: *TuiData, event: uwa.Event, options: *uwa.Options) !void {
+pub fn updateTui(tui: *TuiData, event: ?uwa.Event, options: *uwa.Options) !void {
     if (false) {
         try uwa.stdout.print("Heartbeat sent for " ++
             uwa.TermFormat.GREEN ++ uwa.TermFormat.BOLD ++ "{}" ++ uwa.TermFormat.RESET ++
             " on file {s}.\n", .{ event.etype, event.fileName });
         return;
     }
-    try tui.fileMap.put(event.fileName, tui.fileMap.get(event.fileName).? + 1);
-    _ = options;
     const newTermSz = try getTermSz(std.io.getStdOut().handle);
     if (newTermSz.height != tui.termsize.height or newTermSz.width != tui.termsize.width) {
         tui.termsize = newTermSz;
         try printEntireMap(tui);
     }
+    if (event) |e| {
+        try tui.fileMap.put(e.fileName, tui.fileMap.get(e.fileName).? + 1);
+        return;
+    }
+
+    _ = options;
+
     // should just update the file line
     try printEntireMap(tui);
 }

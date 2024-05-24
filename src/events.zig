@@ -26,7 +26,7 @@ pub fn rebuildFileList(options: *uwa.Options, context: ?*uwa.Context) !uwa.Conte
 var lastEventTime: i64 = 0;
 var lastHeartbeat: i64 = 0;
 const DEBOUNCE_TIME = 5000; // 5 seconds
-pub fn handleEvent(event: uwa.Event, options: *uwa.Options, context: *uwa.Context, tui: *uwa.TuiData) !void {
+pub fn handleEvent(event: uwa.Event, options: *uwa.Options, context: *uwa.Context) !void {
     switch (event.etype) {
         uwa.EventType.FileChange => {
             const currentTime = std.time.milliTimestamp();
@@ -42,7 +42,7 @@ pub fn handleEvent(event: uwa.Event, options: *uwa.Options, context: *uwa.Contex
                 context.* = try rebuildFileList(options, context);
             }
 
-            const sent = try uwa.sendHeartbeat(lastHeartbeat, options, event, tui);
+            const sent = try uwa.sendHeartbeat(lastHeartbeat, options, event);
             if (sent) {
                 lastHeartbeat = currentTime;
             }
@@ -60,3 +60,33 @@ pub fn handleEvent(event: uwa.Event, options: *uwa.Options, context: *uwa.Contex
         },
     }
 }
+
+// atomically push and pop events
+pub const EventQueue = struct {
+    events: std.ArrayList(uwa.Event),
+    mutex: std.Thread.Mutex,
+
+    const Allocator = std.mem.Allocator;
+
+    pub fn init(alloc: Allocator) EventQueue {
+        return EventQueue{
+            .events = std.ArrayList(uwa.Event).init(alloc),
+            .mutex = std.Thread.Mutex{},
+        };
+    }
+
+    pub fn push(self: *EventQueue, event: uwa.Event) Allocator.Error!void {
+        self.mutex.lock();
+        try self.events.append(event);
+        self.mutex.unlock();
+    }
+
+    pub fn pop(self: *EventQueue) ?uwa.Event {
+        if (self.events.items.len == 0) {
+            return null;
+        }
+        self.mutex.lock();
+        defer self.mutex.unlock();
+        return self.events.popOrNull();
+    }
+};

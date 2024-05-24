@@ -50,7 +50,7 @@ fn runWakaTimeCli(filePath: []const u8, options: *uwa.Options) !void {
 //         update lastHeartbeat variable with current file and current time
 
 // returns true if a heartbeat was sent, false otherwise
-pub fn sendHeartbeat(lastHeartbeat: i64, options: *uwa.Options, event: uwa.Event, tui: *uwa.TuiData) !bool {
+pub fn sendHeartbeat(lastHeartbeat: i64, options: *uwa.Options, event: uwa.Event) !bool {
     const HEARTBEAT_INTERVAL = 1000 * 60 * 2; // 2 mins (in milliseconds)
     const currentTime = std.time.milliTimestamp();
 
@@ -61,7 +61,6 @@ pub fn sendHeartbeat(lastHeartbeat: i64, options: *uwa.Options, event: uwa.Event
     runWakaTimeCli(event.fileName, options) catch {
         @panic("Error sending event info to wakatime cli.");
     };
-    try uwa.logHeartbeat(tui, event, options);
 
     return true;
 }
@@ -102,16 +101,32 @@ pub fn main() !void {
     var context = try uwa.initWatching(&options);
 
     // main loop
+    var eventQueue = uwa.EventQueue.init(uwa.alloc);
+    _ = try std.Thread.spawn(.{}, pollEvents, .{ &context, &options, &eventQueue });
     while (true) {
-        const event = try uwa.nextEvent(&context, &options);
-        uwa.log.debug("Event: {} {s}", .{
-            event.etype,
-            event.fileName,
-        });
+        const event = eventQueue.pop();
+        if (event) |e| {
+            uwa.log.debug("Event: {} {s}", .{
+                e.etype,
+                e.fileName,
+            });
 
-        uwa.handleEvent(event, &options, &context, tui) catch {
-            try uwa.stderr.print("Error handling event {any}", .{event});
-            @panic("Error handling event");
+            uwa.handleEvent(e, &options, &context) catch {
+                try uwa.stderr.print("Error handling event {any}", .{e});
+                @panic("Error handling event");
+            };
+        }
+        try uwa.updateTui(tui, event, &options);
+        std.time.sleep(1000000 * 1000); // 10ms
+    }
+}
+
+fn pollEvents(context: *uwa.Context, options: *uwa.Options, eventQueue: *uwa.EventQueue) void {
+    // poll for events
+    while (true) {
+        const e = uwa.nextEvent(context, options) catch {
+            @panic("Error getting next event");
         };
+        eventQueue.push(e) catch @panic("oom");
     }
 }
