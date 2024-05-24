@@ -1,6 +1,6 @@
 Zig Version: `0.12.0`
 
-Currently only Linux is fully supported, but systems with POSIX-compatible filesystems including Windows and macOS have partial (less efficient) support through a polling mechanism.
+Currently only Linux is supported efficiently, but uwaka is still usable on systems with POSIX-compatible filesystems including Windows and macOS.
 
 🦆
 

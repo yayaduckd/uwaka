@@ -31,7 +31,7 @@ pub usingnamespace @import("cli.zig");
 const uwa = @import("mix.zig");
 
 pub const NAME = "uwaka";
-pub const VERSION = "0.4.1";
+pub const VERSION = "0.5.0";
 
 pub var stdout: std.fs.File.Writer = blk: {
     if (!(osTag == .windows)) {

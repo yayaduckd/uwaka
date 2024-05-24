@@ -140,7 +140,6 @@ pub fn main() !void {
         break :blk null;
     };
     // add watch for all files in file list
-
     var context = try uwa.initWatching(&options);
 
     // main loop
@@ -161,13 +160,13 @@ pub fn main() !void {
             };
         }
         if (tui) |t| {
-            try uwa.updateTui(t, event, heartbeatSent);
+            try uwa.updateTui(t, &options, event, heartbeatSent);
         } else if (heartbeatSent) {
             try uwa.stdout.print("Heartbeat sent for " ++
                 uwa.TermFormat.GREEN ++ uwa.TermFormat.BOLD ++ "{}" ++ uwa.TermFormat.RESET ++
                 " on file {s}.\n", .{ event.?.etype, event.?.fileName });
         }
-        std.time.sleep(1000000 * 10); // 10ms
+        std.time.sleep(1000000 * 250); // 10ms
     }
 }
 

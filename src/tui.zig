@@ -170,6 +170,11 @@ pub fn createSortedFileList(fileSet: uwa.FileSet) FileHeartbeatMap {
     return fileMap;
 }
 
+pub fn updateSortedFileList(fileSet: uwa.FileSet, fileMap: *FileHeartbeatMap) !void {
+    fileMap.deinit();
+    fileMap.* = createSortedFileList(fileSet);
+}
+
 const Pos = struct {
     rowsDown: usize,
     colsRight: usize,
@@ -270,15 +275,29 @@ pub fn getTermSz(tty: std.posix.fd_t) !TermSz {
     }
 }
 
-pub fn updateTui(tui: *TuiData, event: ?uwa.Event, isHeartbeat: bool) !void {
+pub fn updateTui(tui: *TuiData, options: *uwa.Options, event: ?uwa.Event, isHeartbeat: bool) !void {
     const newTermSz = try getTermSz(std.io.getStdOut().handle);
     const maxRowsCols = getNumRowsAndCols(&tui.fileMap, newTermSz);
     if (maxRowsCols.height != tui.rowscols.height or maxRowsCols.width != tui.rowscols.width) {
         tui.rowscols = maxRowsCols;
         try printEntireMap(tui);
     }
-    if (!isHeartbeat) return;
     if (event) |e| {
+        var requiresRefresh = false;
+        switch (e.etype) {
+            uwa.EventType.FileCreate => {
+                try tui.fileMap.put(e.fileName, 1);
+                requiresRefresh = true;
+            },
+            uwa.EventType.FileDelete => {
+                requiresRefresh = tui.fileMap.orderedRemove(e.fileName);
+            },
+            else => {},
+        }
+        try updateSortedFileList(options.fileSet, &tui.fileMap);
+        try printEntireMap(tui);
+
+        if (!isHeartbeat) return;
         try tui.fileMap.put(e.fileName, tui.fileMap.get(e.fileName).? + 1);
         // should just update the file line
         const entry = tui.fileMap.getEntry(e.fileName).?;
