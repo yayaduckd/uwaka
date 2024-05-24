@@ -26,6 +26,7 @@ pub usingnamespace @import("main.zig");
 pub usingnamespace @import("files.zig");
 pub usingnamespace @import("events.zig");
 pub usingnamespace @import("tui.zig");
+pub usingnamespace @import("cli.zig");
 
 const uwa = @import("mix.zig");
 
@@ -86,6 +87,7 @@ pub const Options = struct {
     wakatimeCliPath: []const u8, // path to wakatime-cli binary
     editorName: []const u8, // name of editor to pass to wakatime
     editorVersion: []const u8, // version of editor to pass to wakatime
+    tuiEnabled: bool, // enable tui
     gitRepos: ?uwa.FileSet, // git repo to watch
     explicitFolders: ?uwa.FileSet,
 };

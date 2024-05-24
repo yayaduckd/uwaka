@@ -263,13 +263,7 @@ pub fn getTermSz(tty: std.posix.fd_t) !TermSz {
     }
 }
 
-pub fn updateTui(tui: *TuiData, event: ?uwa.Event, options: *uwa.Options) !void {
-    if (false) {
-        try uwa.stdout.print("Heartbeat sent for " ++
-            uwa.TermFormat.GREEN ++ uwa.TermFormat.BOLD ++ "{}" ++ uwa.TermFormat.RESET ++
-            " on file {s}.\n", .{ event.etype, event.fileName });
-        return;
-    }
+pub fn updateTui(tui: *TuiData, event: ?uwa.Event) !void {
     const newTermSz = try getTermSz(std.io.getStdOut().handle);
     if (newTermSz.height != tui.termsize.height or newTermSz.width != tui.termsize.width) {
         tui.termsize = newTermSz;
@@ -279,9 +273,6 @@ pub fn updateTui(tui: *TuiData, event: ?uwa.Event, options: *uwa.Options) !void 
         try tui.fileMap.put(e.fileName, tui.fileMap.get(e.fileName).? + 1);
         return;
     }
-
-    _ = options;
-
     // should just update the file line
     try printEntireMap(tui);
 }

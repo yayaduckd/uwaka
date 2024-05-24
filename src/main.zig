@@ -94,8 +94,12 @@ pub fn main() !void {
 
     var options = try cli.parseArgs(uwa.alloc);
     uwa.log.debug("Wakatime cli path: {s}", .{options.wakatimeCliPath});
-    const tui = try uwa.TuiData.init(&options);
-
+    const tui: ?*uwa.TuiData = blk: {
+        if (options.tuiEnabled) {
+            break :blk try uwa.TuiData.init(&options);
+        }
+        break :blk null;
+    };
     // add watch for all files in file list
 
     var context = try uwa.initWatching(&options);
@@ -105,18 +109,25 @@ pub fn main() !void {
     _ = try std.Thread.spawn(.{}, pollEvents, .{ &context, &options, &eventQueue });
     while (true) {
         const event = eventQueue.pop();
+        var heartbeatSent = false;
         if (event) |e| {
             uwa.log.debug("Event: {} {s}", .{
                 e.etype,
                 e.fileName,
             });
 
-            uwa.handleEvent(e, &options, &context) catch {
+            heartbeatSent = uwa.handleEvent(e, &options, &context) catch {
                 try uwa.stderr.print("Error handling event {any}", .{e});
                 @panic("Error handling event");
             };
         }
-        try uwa.updateTui(tui, event, &options);
+        if (tui) |t| {
+            try uwa.updateTui(t, event);
+        } else if (heartbeatSent) {
+            try uwa.stdout.print("Heartbeat sent for " ++
+                uwa.TermFormat.GREEN ++ uwa.TermFormat.BOLD ++ "{}" ++ uwa.TermFormat.RESET ++
+                " on file {s}.\n", .{ event.?.etype, event.?.fileName });
+        }
         std.time.sleep(1000000 * 1000); // 10ms
     }
 }

@@ -10,6 +10,7 @@ const Args = enum {
     editorName,
     editorVersion,
     gitRepo,
+    disableTui,
 };
 
 const ESC = "\x1B";
@@ -44,6 +45,7 @@ fn printHelp() void {
         \\  -g, --git-repo  Path to git repository.
         \\                  If set, uwaka will watch all tracked and untracked (but not ignored) files in the git repository.
         \\                  Multiple git repos can be set with multiple -g flags.
+        \\ -t, --disable-tui  Disable the TUI. Will only log to stdout.
         \\
     ;
     uwa.stdout.print(helpText, .{}) catch {};
@@ -62,6 +64,7 @@ pub fn parseArgs(allocator: std.mem.Allocator) !uwa.Options {
         .wakatimeCliPath = "",
         .editorName = "",
         .editorVersion = "",
+        .tuiEnabled = true,
         .gitRepos = null,
         .explicitFolders = null,
     };
@@ -82,6 +85,8 @@ pub fn parseArgs(allocator: std.mem.Allocator) !uwa.Options {
         .{ "-r", Args.editorVersion },
         .{ "--git-repo", Args.gitRepo },
         .{ "-g", Args.gitRepo },
+        .{ "-t", Args.disableTui },
+        .{ "--disable-tui", Args.disableTui },
     });
 
     const cwd = std.fs.cwd();
@@ -133,6 +138,9 @@ pub fn parseArgs(allocator: std.mem.Allocator) !uwa.Options {
                     } else {
                         printCliError("Expected argument for {s}\n", .{arg});
                     }
+                },
+                Args.disableTui => {
+                    options.tuiEnabled = false;
                 },
                 Args.gitRepo => {
                     if (args.next()) |gitRepo| {

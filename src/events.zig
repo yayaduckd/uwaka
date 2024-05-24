@@ -26,14 +26,15 @@ pub fn rebuildFileList(options: *uwa.Options, context: ?*uwa.Context) !uwa.Conte
 var lastEventTime: i64 = 0;
 var lastHeartbeat: i64 = 0;
 const DEBOUNCE_TIME = 5000; // 5 seconds
-pub fn handleEvent(event: uwa.Event, options: *uwa.Options, context: *uwa.Context) !void {
+pub fn handleEvent(event: uwa.Event, options: *uwa.Options, context: *uwa.Context) !bool {
+    var heartbeatSent = false;
     switch (event.etype) {
         uwa.EventType.FileChange => {
             const currentTime = std.time.milliTimestamp();
             if (currentTime - lastEventTime < DEBOUNCE_TIME) {
                 uwa.log.debug("event ignored at time {}", .{currentTime});
                 lastEventTime = currentTime;
-                return;
+                return heartbeatSent;
             }
 
             if (std.mem.eql(u8, event.fileName, ".gitignore")) {
@@ -42,8 +43,8 @@ pub fn handleEvent(event: uwa.Event, options: *uwa.Options, context: *uwa.Contex
                 context.* = try rebuildFileList(options, context);
             }
 
-            const sent = try uwa.sendHeartbeat(lastHeartbeat, options, event);
-            if (sent) {
+            heartbeatSent = try uwa.sendHeartbeat(lastHeartbeat, options, event);
+            if (heartbeatSent) {
                 lastHeartbeat = currentTime;
             }
             lastEventTime = currentTime;
@@ -59,6 +60,7 @@ pub fn handleEvent(event: uwa.Event, options: *uwa.Options, context: *uwa.Contex
             uwa.log.err("Unknown event type: {}", .{event.etype});
         },
     }
+    return heartbeatSent;
 }
 
 // atomically push and pop events

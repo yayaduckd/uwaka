@@ -24,6 +24,7 @@ Options:
   -g, --git-repo  Path to git repository.
                   If set, uwaka will watch all tracked and untracked (but not ignored) files in the git repository.
                   Multiple git repos can be set with multiple -g flags.
+  -t, --disable-tui  Disable the TUI. Will only log to stdout.
 ```
 
 Tested with `wakatime-cli` version `1.90.0`.
