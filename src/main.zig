@@ -101,18 +101,6 @@ pub fn main() !void {
 
     var context = try uwa.initWatching(&options);
 
-    pub const EventQueue = struct {
-        events: std.ArrayList(uwa.Event),
-        mutex: std.Thread.Mutex,
-
-        pub fn init(alloc: std.mem.Allocator) EventQueue {
-            return EventQueue{
-                .events = std.ArrayList(uwa.Event).init(alloc),
-                .mutex = std.Thread.Mutex.init,
-            };
-        }
-    };
-
     // main loop
     while (true) {
         const event = try uwa.nextEvent(&context, &options);
