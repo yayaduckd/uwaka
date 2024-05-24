@@ -1,7 +1,7 @@
 const std = @import("std");
 const buildOptions = @import("build_options");
 
-pub const osTag = @tagName(@import("builtin").os.tag);
+pub const osTag = @import("builtin").os.tag;
 
 const osSpecificImplementation = blk: {
     const ws = buildOptions.@"build.build.WatchSystem";
@@ -11,27 +11,37 @@ const osSpecificImplementation = blk: {
     }
 };
 
+pub const c = blk: {
+    if (osTag != .linux and osTag != .windows) {
+        break :blk @cImport({
+            @cInclude("sys/ioctl.h");
+        });
+    } else {
+        break :blk undefined;
+    }
+};
+
 pub usingnamespace osSpecificImplementation;
 pub usingnamespace @import("main.zig");
 pub usingnamespace @import("files.zig");
 pub usingnamespace @import("events.zig");
+pub usingnamespace @import("tui.zig");
+pub usingnamespace @import("cli.zig");
 
 const uwa = @import("mix.zig");
 
 pub const NAME = "uwaka";
-pub const VERSION = "0.4.1";
+pub const VERSION = "0.5.0";
 
 pub var stdout: std.fs.File.Writer = blk: {
-    const tag = @tagName(@import("builtin").os.tag);
-    if (std.mem.eql(u8, tag, "linux")) {
+    if (!(osTag == .windows)) {
         break :blk std.io.getStdOut().writer();
     } else {
         break :blk undefined;
     }
 };
 pub var stderr: std.fs.File.Writer = blk: {
-    const tag = @tagName(@import("builtin").os.tag);
-    if (std.mem.eql(u8, tag, "linux")) {
+    if (!(osTag == .windows)) {
         break :blk std.io.getStdErr().writer();
     } else {
         break :blk undefined;
@@ -39,6 +49,10 @@ pub var stderr: std.fs.File.Writer = blk: {
 };
 
 pub const log = std.log.default;
+
+pub fn print(text: []const u8) void {
+    stdout.print("{s}", .{text}) catch @panic("error python printing");
+}
 
 pub const EventType = enum {
     FileChange,
@@ -73,6 +87,7 @@ pub const Options = struct {
     wakatimeCliPath: []const u8, // path to wakatime-cli binary
     editorName: []const u8, // name of editor to pass to wakatime
     editorVersion: []const u8, // version of editor to pass to wakatime
+    tuiEnabled: bool, // enable tui
     gitRepos: ?uwa.FileSet, // git repo to watch
     explicitFolders: ?uwa.FileSet,
 };

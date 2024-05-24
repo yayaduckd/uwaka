@@ -10,8 +10,8 @@ pub fn build(b: *std.Build) void {
     // for restricting supported target set are available.
     const target = b.standardTargetOptions(.{});
 
-    const architecture = @tagName(target.result.cpu.arch);
-    const os = @tagName(target.result.os.tag);
+    const architecture = target.result.cpu.arch;
+    const os = target.result.os.tag;
 
     var options = b.addOptions();
 
@@ -28,7 +28,7 @@ pub fn build(b: *std.Build) void {
             WatchSystem.posix => options.addOption(WatchSystem, "watch_system", ws),
         }
     } else {
-        if (std.mem.eql(u8, os, "linux")) {
+        if (os == .linux) {
             options.addOption(WatchSystem, "watch_system", WatchSystem.inotify);
         } else {
             options.addOption(WatchSystem, "watch_system", WatchSystem.posix);
@@ -40,7 +40,7 @@ pub fn build(b: *std.Build) void {
     // set a preferred release mode, allowing the user to decide how to optimize.
     const optimize = b.standardOptimizeOption(.{});
 
-    const executableName = std.fmt.allocPrint(b.allocator, "uwaka_{s}-{s}", .{ architecture, os }) catch unreachable;
+    const executableName = std.fmt.allocPrint(b.allocator, "uwaka_{s}-{s}", .{ @tagName(architecture), @tagName(os) }) catch unreachable;
 
     const exe = b.addExecutable(.{
         .name = executableName,
@@ -49,6 +49,9 @@ pub fn build(b: *std.Build) void {
         .optimize = optimize,
     });
     exe.root_module.addOptions("build_options", options);
+    if (os != .linux and os != .windows) {
+        exe.linkLibC();
+    }
 
     // This declares intent for the executable to be installed into the
     // standard location when the user invokes the "install" step (the default

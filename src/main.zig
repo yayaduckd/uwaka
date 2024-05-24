@@ -3,6 +3,45 @@ const std = @import("std");
 const uwa = @import("mix.zig");
 const cli = @import("cli.zig");
 
+pub const std_options = .{
+    .logFn = myLogFn,
+};
+
+pub fn myLogFn(
+    comptime level: std.log.Level,
+    comptime scope: @TypeOf(.EnumLiteral),
+    comptime format: []const u8,
+    args: anytype,
+) void {
+    const logFile = "uwaka.log";
+    const cwd = std.fs.cwd();
+    var createdFile = cwd.openFile(logFile, .{ .lock = .exclusive, .mode = .write_only });
+    if (createdFile) |_| {} else |err| {
+        if (err == std.fs.File.OpenError.FileNotFound) {
+            createdFile = cwd.createFile(logFile, .{
+                .truncate = false,
+                .lock = .exclusive,
+            }) catch |err2| {
+                std.debug.print("Error creating log file: {}\n", .{err2});
+                return;
+            };
+        }
+    }
+    const file = createdFile catch {
+        @panic("error logging");
+    };
+
+    defer file.close();
+    file.seekFromEnd(0) catch {};
+    const writer = file.writer();
+
+    // timestamp
+    const timestamp = std.time.milliTimestamp();
+    writer.print("[{d}] {s}({s}): ", .{ timestamp, level.asText(), @tagName(scope) }) catch {};
+    writer.print(format, args) catch {};
+    _ = writer.write("\n") catch {};
+}
+
 fn runWakaTimeCli(filePath: []const u8, options: *uwa.Options) !void {
     // run wakatime-cli
 
@@ -61,9 +100,7 @@ pub fn sendHeartbeat(lastHeartbeat: i64, options: *uwa.Options, event: uwa.Event
     runWakaTimeCli(event.fileName, options) catch {
         @panic("Error sending event info to wakatime cli.");
     };
-    try uwa.stdout.print("Heartbeat sent for " ++
-        cli.TermFormat.GREEN ++ cli.TermFormat.BOLD ++ "{}" ++ cli.TermFormat.RESET ++
-        " on file {s}.\n", .{ event.etype, event.fileName });
+
     return true;
 }
 
@@ -88,29 +125,89 @@ pub fn shutdown(context: *uwa.Context, options: *uwa.Options) void {
 
 pub fn main() !void {
     // initialize writer
-    if (std.mem.eql(u8, uwa.osTag, "windows")) {
+    if (uwa.osTag == .windows) {
         uwa.stdout = std.io.getStdOut().writer();
         uwa.stderr = std.io.getStdErr().writer();
     }
-    uwa.log.info("Running on {s}", .{uwa.osTag});
+    uwa.log.info("\n\n\n\n\nRunning on {s}", .{@tagName(uwa.osTag)});
 
     var options = try cli.parseArgs(uwa.alloc);
     uwa.log.debug("Wakatime cli path: {s}", .{options.wakatimeCliPath});
-
+    const tui: ?*uwa.TuiData = blk: {
+        if (options.tuiEnabled) {
+            break :blk try uwa.TuiData.init(&options);
+        }
+        break :blk null;
+    };
     // add watch for all files in file list
-
     var context = try uwa.initWatching(&options);
-    // main loop
-    while (true) {
-        const event = try uwa.nextEvent(&context, &options);
-        uwa.log.debug("Event: {} {s}", .{
-            event.etype,
-            event.fileName,
-        });
 
-        uwa.handleEvent(event, &options, &context) catch {
-            try uwa.stderr.print("Error handling event {any}", .{event});
-            @panic("Error handling event");
+    // main loop
+    var eventQueue = uwa.EventQueue.init(uwa.alloc);
+    var nextEventCondition = std.Thread.Condition{};
+    _ = try std.Thread.spawn(.{}, pollEvents, .{
+        &context,
+        &options,
+        &eventQueue,
+        &nextEventCondition,
+    });
+    while (true) {
+        const event = eventQueue.pop();
+        var heartbeatSent = false;
+        if (event) |e| {
+            uwa.log.debug("Event: {} {s}", .{
+                e.etype,
+                e.fileName,
+            });
+
+            heartbeatSent = uwa.handleEvent(e, &options, &context) catch |err| {
+                if (err == uwa.UwakaFileError.IntegrityCompromisedError) {
+                    context = try uwa.rebuildFileList(&options, &context);
+                    uwa.log.warn("Detected integrity issues, rebuilding file list", .{});
+                    continue;
+                } else {
+                    uwa.log.err("Error handling event {any}", .{e});
+                    @panic("Error handling event");
+                }
+            };
+            nextEventCondition.signal();
+        }
+        if (tui) |t| {
+            uwa.updateTui(t, &options, event, heartbeatSent) catch |err| {
+                if (err == uwa.UwakaFileError.IntegrityCompromisedError) {
+                    context = try uwa.rebuildFileList(&options, &context);
+                    uwa.log.warn("Detected integrity issues, rebuilding file list", .{});
+                } else {
+                    uwa.log.err("error handling tui, crashing.\n{}", .{err});
+                    @panic("error");
+                }
+            };
+        } else if (heartbeatSent) {
+            try uwa.stdout.print("Heartbeat sent for " ++
+                uwa.TermFormat.GREEN ++ uwa.TermFormat.BOLD ++ "{}" ++ uwa.TermFormat.RESET ++
+                " on file {s}.\n", .{ event.?.etype, event.?.fileName });
+        }
+        std.time.sleep(1000000 * 250); // 10ms
+    }
+}
+
+fn pollEvents(
+    context: *uwa.Context,
+    options: *uwa.Options,
+    eventQueue: *uwa.EventQueue,
+    nextEventCondition: *std.Thread.Condition,
+) void {
+    var nextEventLock = std.Thread.Mutex{};
+    // poll for events
+    while (true) {
+        _ = nextEventLock.tryLock();
+        const e = uwa.nextEvent(context, options) catch {
+            @panic("Error getting next event");
         };
+        eventQueue.push(e) catch @panic("oom");
+        if (e.etype == uwa.EventType.FileDelete) {
+            nextEventCondition.wait(&nextEventLock);
+        }
+        nextEventLock.unlock();
     }
 }

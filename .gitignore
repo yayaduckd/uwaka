@@ -8,3 +8,6 @@ wakatime-cli*
 # Scripts
 scripts
 build_all_os.sh
+
+# Log
+uwaka.log

@@ -150,7 +150,6 @@ fn inotifyToUwakaEvent(event: inotifyEvent, context: *Context) ?EventTypeInfo {
         if (m & IN.ISDIR > 0) isDir = true;
         if (m & IN.MODIFY > 0) break :blk etype.FileChange;
         if (m & IN.CREATE > 0) break :blk etype.FileCreate;
-        // if (m & IN.DELETE > 0) break :blk etype.FileDelete;
         if (m & IN.DELETE_SELF > 0) break :blk etype.FileDelete;
         if (m & IN.MOVED_FROM > 0) break :blk handleMove(event.cookie, context);
         if (m & IN.MOVED_TO > 0) break :blk handleMove(event.cookie, context);
@@ -169,7 +168,8 @@ fn inotifyToUwakaEvent(event: inotifyEvent, context: *Context) ?EventTypeInfo {
 
 pub fn nextEvent(context: *Context, options: *uwa.Options) !uwa.Event {
     if (context.eventQueue.items.len > 0) {
-        return context.eventQueue.pop();
+        const event = context.eventQueue.pop();
+        return event;
     }
 
     // otherwise, read from inotify fd
@@ -218,7 +218,7 @@ pub fn nextEvent(context: *Context, options: *uwa.Options) !uwa.Event {
             var fileName = context.watchedFiles.get(event.wd).?;
             uwa.log.debug("{s}", .{fileName});
             if (etypeinfo.etype == uwa.EventType.FileDelete) {
-                fileName = event.name orelse fileName;
+                fileName = try uwa.alloc.dupe(u8, event.name orelse fileName);
                 _ = context.watchedFiles.remove(event.wd);
                 context.createdFiles.remove(fileName);
             } else if (etypeinfo.etype == uwa.EventType.FileCreate) {
@@ -230,13 +230,15 @@ pub fn nextEvent(context: *Context, options: *uwa.Options) !uwa.Event {
                 const mask: u32 = if (etypeinfo.isDir) directoryWatchMask else fileWatchMask;
                 uwa.log.debug("adding watch for {s} with mask {d}", .{ fileName, mask });
                 const wd = try std.posix.inotify_add_watch(context.inotify_fd, fileName, mask);
-                try context.watchedFiles.put(wd, context.createdFiles.get(fileName).?);
+                try context.watchedFiles.put(wd, fileName);
             }
             const uwakaEvent = uwa.Event{
                 .etype = etypeinfo.etype,
                 .fileName = fileName,
             };
-            try context.eventQueue.append(uwakaEvent);
+            if (!etypeinfo.isDir) {
+                try context.eventQueue.append(uwakaEvent);
+            }
         } else {
             continue;
         }

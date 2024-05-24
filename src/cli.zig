@@ -10,21 +10,23 @@ const Args = enum {
     editorName,
     editorVersion,
     gitRepo,
+    disableTui,
 };
 
+const ESC = "\x1B";
 pub const TermFormat = struct {
-    RED: []const u8 = "\x1b[31m",
-    GREEN: []const u8 = "\x1b[32m",
-    YELLOW: []const u8 = "\x1b[33m",
-    BLUE: []const u8 = "\x1b[34m",
-    MAGENTA: []const u8 = "\x1b[35m",
-    CYAN: []const u8 = "\x1b[36m",
-    WHITE: []const u8 = "\x1b[37m",
+    RED: []const u8 = ESC ++ "[31m",
+    GREEN: []const u8 = ESC ++ "[32m",
+    YELLOW: []const u8 = ESC ++ "[33m",
+    BLUE: []const u8 = ESC ++ "[34m",
+    MAGENTA: []const u8 = ESC ++ "[35m",
+    CYAN: []const u8 = ESC ++ "[36m",
+    WHITE: []const u8 = ESC ++ "[37m",
 
-    RESET: []const u8 = "\x1b[0m",
-    BOLD: []const u8 = "\x1b[1m",
-    UNDERLINE: []const u8 = "\x1b[4m",
-    INVERT: []const u8 = "\x1b[7m",
+    RESET: []const u8 = ESC ++ "[0m",
+    BOLD: []const u8 = ESC ++ "[1m",
+    UNDERLINE: []const u8 = ESC ++ "[4m",
+    INVERT: []const u8 = ESC ++ "[7m",
 }{};
 
 fn printHelp() void {
@@ -43,6 +45,7 @@ fn printHelp() void {
         \\  -g, --git-repo  Path to git repository.
         \\                  If set, uwaka will watch all tracked and untracked (but not ignored) files in the git repository.
         \\                  Multiple git repos can be set with multiple -g flags.
+        \\ -t, --disable-tui  Disable the TUI. Will only log to stdout.
         \\
     ;
     uwa.stdout.print(helpText, .{}) catch {};
@@ -61,6 +64,7 @@ pub fn parseArgs(allocator: std.mem.Allocator) !uwa.Options {
         .wakatimeCliPath = "",
         .editorName = "",
         .editorVersion = "",
+        .tuiEnabled = true,
         .gitRepos = null,
         .explicitFolders = null,
     };
@@ -81,6 +85,8 @@ pub fn parseArgs(allocator: std.mem.Allocator) !uwa.Options {
         .{ "-r", Args.editorVersion },
         .{ "--git-repo", Args.gitRepo },
         .{ "-g", Args.gitRepo },
+        .{ "-t", Args.disableTui },
+        .{ "--disable-tui", Args.disableTui },
     });
 
     const cwd = std.fs.cwd();
@@ -132,6 +138,9 @@ pub fn parseArgs(allocator: std.mem.Allocator) !uwa.Options {
                     } else {
                         printCliError("Expected argument for {s}\n", .{arg});
                     }
+                },
+                Args.disableTui => {
+                    options.tuiEnabled = false;
                 },
                 Args.gitRepo => {
                     if (args.next()) |gitRepo| {

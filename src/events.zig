@@ -26,14 +26,15 @@ pub fn rebuildFileList(options: *uwa.Options, context: ?*uwa.Context) !uwa.Conte
 var lastEventTime: i64 = 0;
 var lastHeartbeat: i64 = 0;
 const DEBOUNCE_TIME = 5000; // 5 seconds
-pub fn handleEvent(event: uwa.Event, options: *uwa.Options, context: *uwa.Context) !void {
+pub fn handleEvent(event: uwa.Event, options: *uwa.Options, context: *uwa.Context) !bool {
+    var heartbeatSent = false;
     switch (event.etype) {
         uwa.EventType.FileChange => {
             const currentTime = std.time.milliTimestamp();
             if (currentTime - lastEventTime < DEBOUNCE_TIME) {
                 uwa.log.debug("event ignored at time {}", .{currentTime});
                 lastEventTime = currentTime;
-                return;
+                return heartbeatSent;
             }
 
             if (std.mem.eql(u8, event.fileName, ".gitignore")) {
@@ -42,8 +43,8 @@ pub fn handleEvent(event: uwa.Event, options: *uwa.Options, context: *uwa.Contex
                 context.* = try rebuildFileList(options, context);
             }
 
-            const sent = try uwa.sendHeartbeat(lastHeartbeat, options, event);
-            if (sent) {
+            heartbeatSent = try uwa.sendHeartbeat(lastHeartbeat, options, event);
+            if (heartbeatSent) {
                 lastHeartbeat = currentTime;
             }
             lastEventTime = currentTime;
@@ -52,6 +53,7 @@ pub fn handleEvent(event: uwa.Event, options: *uwa.Options, context: *uwa.Contex
             try options.fileSet.insert(event.fileName);
         },
         uwa.EventType.FileDelete => {
+            try uwa.assertIntegrity(options.fileSet.contains(event.fileName));
             options.fileSet.remove(event.fileName);
             options.explicitFiles.remove(event.fileName);
         },
@@ -59,4 +61,35 @@ pub fn handleEvent(event: uwa.Event, options: *uwa.Options, context: *uwa.Contex
             uwa.log.err("Unknown event type: {}", .{event.etype});
         },
     }
+    return heartbeatSent;
 }
+
+// atomically push and pop events
+pub const EventQueue = struct {
+    events: std.ArrayList(uwa.Event),
+    mutex: std.Thread.Mutex,
+
+    const Allocator = std.mem.Allocator;
+
+    pub fn init(alloc: Allocator) EventQueue {
+        return EventQueue{
+            .events = std.ArrayList(uwa.Event).init(alloc),
+            .mutex = std.Thread.Mutex{},
+        };
+    }
+
+    pub fn push(self: *EventQueue, event: uwa.Event) Allocator.Error!void {
+        self.mutex.lock();
+        try self.events.append(event);
+        self.mutex.unlock();
+    }
+
+    pub fn pop(self: *EventQueue) ?uwa.Event {
+        if (self.events.items.len == 0) {
+            return null;
+        }
+        self.mutex.lock();
+        defer self.mutex.unlock();
+        return self.events.popOrNull();
+    }
+};

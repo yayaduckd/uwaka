@@ -22,6 +22,7 @@ pub fn getFilesInGitRepo(repoPath: []const u8) !FileSet {
 
     const gitFiles = gitFilesResult.stdout;
 
+    const cwd = std.fs.cwd();
     // split by newline
     var lines = std.mem.split(u8, gitFiles, "\n");
     while (lines.next()) |line| {
@@ -29,6 +30,10 @@ pub fn getFilesInGitRepo(repoPath: []const u8) !FileSet {
             continue;
         }
         const fullPath: []u8 = try std.fs.path.join(uwa.alloc, &.{ resolvedRepoPath, line });
+        const stat = try cwd.statFile(fullPath);
+        if (stat.kind == .directory) {
+            continue;
+        }
         try files.insert(fullPath);
         uwa.alloc.free(fullPath);
     }
@@ -44,6 +49,13 @@ pub fn addFileSet(self: *FileSet, other: *FileSet) void {
         };
     }
 }
+pub const UwakaFileError = error{IntegrityCompromisedError};
+pub const IntegrityCompromised = UwakaFileError.IntegrityCompromisedError;
+pub fn assertIntegrity(ok: bool) UwakaFileError!void {
+    if (!ok) {
+        return UwakaFileError.IntegrityCompromisedError;
+    }
+}
 
 /// A FileSet is almost identical to a BufSet, but it stores files.
 /// It will resolve paths before storing them.
@@ -53,7 +65,6 @@ pub const FileSet = struct {
     const BufSetHashMap = std.StringHashMap(void);
     pub const Iterator = BufSetHashMap.KeyIterator;
 
-    usingnamespace std;
     bufSet: BufSet,
     allocator: Allocator,
 
@@ -124,6 +135,16 @@ pub const FileSet = struct {
         return self.bufSet.copy(value);
     }
 };
+
+pub fn fileEql(file1: []const u8, file2: []const u8) bool {
+    const a = uwa.alloc;
+    const resolvedFile1 = try std.fs.path.resolve(a, &.{file1});
+    defer a.free(resolvedFile1);
+    const resolvedFile2 = try std.fs.path.resolve(a, &.{file2});
+    defer a.free(resolvedFile2);
+
+    return std.mem.eql(u8, resolvedFile1, resolvedFile2);
+}
 
 pub fn getFilesInFolder(folderPath: []const u8) !FileSet {
     var result = FileSet.init(uwa.alloc);

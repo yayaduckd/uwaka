@@ -1,6 +1,6 @@
 Zig Version: `0.12.0`
 
-Currently only Linux is fully supported, but systems with POSIX-compatible filesystems including Windows and macOS have partial (less efficient) support through a polling mechanism.
+Currently only Linux is supported efficiently, but uwaka is still usable on systems with POSIX-compatible filesystems including Windows and macOS.
 
 🦆
 
@@ -24,6 +24,7 @@ Options:
   -g, --git-repo  Path to git repository.
                   If set, uwaka will watch all tracked and untracked (but not ignored) files in the git repository.
                   Multiple git repos can be set with multiple -g flags.
+  -t, --disable-tui  Disable the TUI. Will only log to stdout.
 ```
 
 Tested with `wakatime-cli` version `1.90.0`.
