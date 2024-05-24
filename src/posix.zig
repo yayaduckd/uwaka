@@ -36,13 +36,17 @@ pub fn nextEvent(context: *Context, options: *uwa.Options) !uwa.Event {
         // if a file has changed, send an event
         while (filesIter.next()) |filePtr| {
             const file = filePtr.*;
-            const stat = cwd.statFile(file) catch {
-                _ = context.lastModifiedMap.remove(file);
-                // file deleted
-                return uwa.Event{
-                    .etype = uwa.EventType.FileDelete,
-                    .fileName = file,
-                };
+            const stat = cwd.statFile(file) catch |err| {
+                if (err == std.fs.Dir.StatFileError.FileNotFound) {
+                    _ = context.lastModifiedMap.remove(file);
+                    // file deleted
+                    return uwa.Event{
+                        .etype = uwa.EventType.FileDelete,
+                        .fileName = file,
+                    };
+                }
+                uwa.log.warn("Error statting file: {}", .{err});
+                return uwa.UwakaFileError.IntegrityCompromisedError;
             };
 
             var lastModified = context.lastModifiedMap.get(file);

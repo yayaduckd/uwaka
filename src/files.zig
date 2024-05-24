@@ -44,6 +44,13 @@ pub fn addFileSet(self: *FileSet, other: *FileSet) void {
         };
     }
 }
+pub const UwakaFileError = error{IntegrityCompromisedError};
+pub const IntegrityCompromised = UwakaFileError.IntegrityCompromisedError;
+pub fn assertIntegrity(ok: bool) UwakaFileError!void {
+    if (!ok) {
+        return UwakaFileError.IntegrityCompromisedError;
+    }
+}
 
 /// A FileSet is almost identical to a BufSet, but it stores files.
 /// It will resolve paths before storing them.

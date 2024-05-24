@@ -53,6 +53,7 @@ pub fn handleEvent(event: uwa.Event, options: *uwa.Options, context: *uwa.Contex
             try options.fileSet.insert(event.fileName);
         },
         uwa.EventType.FileDelete => {
+            try uwa.assertIntegrity(options.fileSet.contains(event.fileName));
             options.fileSet.remove(event.fileName);
             options.explicitFiles.remove(event.fileName);
         },

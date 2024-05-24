@@ -144,7 +144,13 @@ pub fn main() !void {
 
     // main loop
     var eventQueue = uwa.EventQueue.init(uwa.alloc);
-    _ = try std.Thread.spawn(.{}, pollEvents, .{ &context, &options, &eventQueue });
+    var nextEventCondition = std.Thread.Condition{};
+    _ = try std.Thread.spawn(.{}, pollEvents, .{
+        &context,
+        &options,
+        &eventQueue,
+        &nextEventCondition,
+    });
     while (true) {
         const event = eventQueue.pop();
         var heartbeatSent = false;
@@ -154,13 +160,28 @@ pub fn main() !void {
                 e.fileName,
             });
 
-            heartbeatSent = uwa.handleEvent(e, &options, &context) catch {
-                try uwa.stderr.print("Error handling event {any}", .{e});
-                @panic("Error handling event");
+            heartbeatSent = uwa.handleEvent(e, &options, &context) catch |err| {
+                if (err == uwa.UwakaFileError.IntegrityCompromisedError) {
+                    context = try uwa.rebuildFileList(&options, &context);
+                    uwa.log.warn("Detected integrity issues, rebuilding file list", .{});
+                    continue;
+                } else {
+                    uwa.log.err("Error handling event {any}", .{e});
+                    @panic("Error handling event");
+                }
             };
+            nextEventCondition.signal();
         }
         if (tui) |t| {
-            try uwa.updateTui(t, &options, event, heartbeatSent);
+            uwa.updateTui(t, &options, event, heartbeatSent) catch |err| {
+                if (err == uwa.UwakaFileError.IntegrityCompromisedError) {
+                    context = try uwa.rebuildFileList(&options, &context);
+                    uwa.log.warn("Detected integrity issues, rebuilding file list", .{});
+                } else {
+                    uwa.log.err("error handling tui, crashing.\n{}", .{err});
+                    @panic("error");
+                }
+            };
         } else if (heartbeatSent) {
             try uwa.stdout.print("Heartbeat sent for " ++
                 uwa.TermFormat.GREEN ++ uwa.TermFormat.BOLD ++ "{}" ++ uwa.TermFormat.RESET ++
@@ -170,12 +191,23 @@ pub fn main() !void {
     }
 }
 
-fn pollEvents(context: *uwa.Context, options: *uwa.Options, eventQueue: *uwa.EventQueue) void {
+fn pollEvents(
+    context: *uwa.Context,
+    options: *uwa.Options,
+    eventQueue: *uwa.EventQueue,
+    nextEventCondition: *std.Thread.Condition,
+) void {
+    var nextEventLock = std.Thread.Mutex{};
     // poll for events
     while (true) {
+        _ = nextEventLock.tryLock();
         const e = uwa.nextEvent(context, options) catch {
             @panic("Error getting next event");
         };
         eventQueue.push(e) catch @panic("oom");
+        if (e.etype == uwa.EventType.FileDelete) {
+            nextEventCondition.wait(&nextEventLock);
+        }
+        nextEventLock.unlock();
     }
 }
