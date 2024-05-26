@@ -187,7 +187,7 @@ pub fn main() !void {
                 uwa.TermFormat.GREEN ++ uwa.TermFormat.BOLD ++ "{}" ++ uwa.TermFormat.RESET ++
                 " on file {s}.\n", .{ event.?.etype, event.?.fileName });
         }
-        std.time.sleep(1000000 * 250); // 10ms
+        std.time.sleep(1000000 * 250); // 250ms
     }
 }
 
