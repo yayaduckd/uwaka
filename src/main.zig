@@ -143,7 +143,7 @@ pub fn main() !void {
     var context = try uwa.initWatching(&options);
 
     // main loop
-    var eventQueue = uwa.EventQueue.init(uwa.alloc);
+    var eventQueue = uwa.Queue(uwa.Event).init(uwa.alloc);
     var nextEventCondition = std.Thread.Condition{};
     _ = try std.Thread.spawn(.{}, pollEvents, .{
         &context,
@@ -194,7 +194,7 @@ pub fn main() !void {
 fn pollEvents(
     context: *uwa.Context,
     options: *uwa.Options,
-    eventQueue: *uwa.EventQueue,
+    eventQueue: *uwa.Queue(uwa.Event),
     nextEventCondition: *std.Thread.Condition,
 ) void {
     var nextEventLock = std.Thread.Mutex{};
