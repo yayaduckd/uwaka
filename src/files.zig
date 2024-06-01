@@ -9,10 +9,12 @@ pub fn getFilesInGitRepo(repoPath: []const u8) !FileSet {
 
     const resolvedRepoPath = try std.fs.path.resolve(uwa.alloc, &.{repoPath});
     defer uwa.alloc.free(resolvedRepoPath);
+
     const gitFilesResult = std.process.Child.run(.{
         .allocator = uwa.alloc,
         .argv = &.{ "git", "ls-files", "--cached", "--others", "--exclude-standard" },
         .cwd = resolvedRepoPath,
+        .max_output_bytes = 1024 * 1024 * 10,
     }) catch |err| {
         uwa.log.info("Error: unable to get files in git repo.", .{});
         return err;
