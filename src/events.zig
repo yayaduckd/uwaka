@@ -65,31 +65,34 @@ pub fn handleEvent(event: uwa.Event, options: *uwa.Options, context: *uwa.Contex
 }
 
 // atomically push and pop events
-pub const EventQueue = struct {
-    events: std.ArrayList(uwa.Event),
-    mutex: std.Thread.Mutex,
+pub fn Queue(comptime T: type) type {
+    return struct {
+        const Self = @This();
 
-    const Allocator = std.mem.Allocator;
+        contents: std.ArrayList(T),
+        mutex: std.Thread.Mutex,
+        const Allocator = std.mem.Allocator;
 
-    pub fn init(alloc: Allocator) EventQueue {
-        return EventQueue{
-            .events = std.ArrayList(uwa.Event).init(alloc),
-            .mutex = std.Thread.Mutex{},
-        };
-    }
-
-    pub fn push(self: *EventQueue, event: uwa.Event) Allocator.Error!void {
-        self.mutex.lock();
-        try self.events.append(event);
-        self.mutex.unlock();
-    }
-
-    pub fn pop(self: *EventQueue) ?uwa.Event {
-        if (self.events.items.len == 0) {
-            return null;
+        pub fn init(alloc: Allocator) Queue(T) {
+            return Self{
+                .contents = std.ArrayList(T).init(alloc),
+                .mutex = std.Thread.Mutex{},
+            };
         }
-        self.mutex.lock();
-        defer self.mutex.unlock();
-        return self.events.popOrNull();
-    }
-};
+
+        pub fn push(self: *Queue(T), event: T) Allocator.Error!void {
+            self.mutex.lock();
+            try self.contents.append(event);
+            self.mutex.unlock();
+        }
+
+        pub fn pop(self: *Queue(T)) ?T {
+            if (self.contents.items.len == 0) {
+                return null;
+            }
+            self.mutex.lock();
+            defer self.mutex.unlock();
+            return self.contents.popOrNull();
+        }
+    };
+}

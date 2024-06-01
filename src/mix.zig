@@ -4,7 +4,7 @@ const buildOptions = @import("build_options");
 pub const osTag = @import("builtin").os.tag;
 
 const osSpecificImplementation = blk: {
-    const ws = buildOptions.@"build.build.WatchSystem";
+    const ws = buildOptions.@"build.WatchSystem";
     switch (buildOptions.watch_system) {
         ws.inotify => break :blk @import("linux.zig"),
         ws.posix => break :blk @import("posix.zig"),
@@ -31,7 +31,7 @@ pub usingnamespace @import("cli.zig");
 const uwa = @import("mix.zig");
 
 pub const NAME = "uwaka";
-pub const VERSION = "0.5.0";
+pub const VERSION = "0.6.0";
 
 pub var stdout: std.fs.File.Writer = blk: {
     if (!(osTag == .windows)) {

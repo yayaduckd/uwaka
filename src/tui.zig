@@ -84,8 +84,8 @@ pub const Ansi = struct {
     }
 
     fn cursorToPos(self: *Ansi, pos: Pos, termsize: TermSz) []const u8 {
-        const row = (termsize.height - 1) - pos.rowsDown;
-        const col = pos.colsRight;
+        const row = (termsize.height - 1) - pos.y;
+        const col = pos.x;
         return std.fmt.allocPrint(self.arena.allocator(), "{s}{s}{d};{d}{s}", .{ ESC, "[", row, col, "H" }) catch {
             @panic("printing cursor_down failed");
         };
@@ -119,16 +119,27 @@ var tg: TuiData = undefined;
 pub const TuiData = struct {
     fileMap: FileHeartbeatMap,
     ansi: Ansi,
-    rowscols: TermSz,
+    termsize: TermSz,
+    maxFileLen: usize,
+    page: usize = 0,
+    filePositions: FilePositionInfo,
+    inputs: uwa.Queue(InputEvent),
     alloc: std.mem.Allocator = uwa.alloc,
 
     pub fn init(options: *uwa.Options) !*TuiData {
-        var fileMap = createSortedFileList(options.fileSet);
+        const fileMap = createSortedFileList(options.fileSet);
+        const termsize = try getTermSz(std.io.getStdOut().handle);
+        const maxFileLen = termsize.width / 2 - 1;
+        const inputs = uwa.Queue(InputEvent).init(uwa.alloc);
         tg = TuiData{
             .fileMap = fileMap,
             .ansi = Ansi.init(uwa.alloc),
-            .rowscols = getNumRowsAndCols(&fileMap, try getTermSz(std.io.getStdOut().handle)),
+            .termsize = termsize,
+            .filePositions = getFilePositions(&fileMap, termsize, maxFileLen, null, null),
+            .maxFileLen = maxFileLen,
+            .inputs = inputs,
         };
+        _ = try std.Thread.spawn(.{}, monitorStdIn, .{&tg.inputs});
 
         try printEntireMap(&tg);
         return &tg;
@@ -152,6 +163,11 @@ const FileMapSortContext = struct {
         return .{ .fileMap = map };
     }
 
+    pub fn compareFn(t: type, a: []const u8, b: []const u8) std.math.Order {
+        _ = t;
+        return std.mem.order(u8, a, b);
+    }
+
     pub fn lessThan(ctx: FileMapSortContext, a_index: usize, b_index: usize) bool {
         const str1 = ctx.fileMap.keys()[a_index];
         const str2 = ctx.fileMap.keys()[b_index];
@@ -170,42 +186,110 @@ pub fn createSortedFileList(fileSet: uwa.FileSet) FileHeartbeatMap {
     return fileMap;
 }
 
-pub fn updateSortedFileList(fileSet: uwa.FileSet, fileMap: *FileHeartbeatMap) !void {
-    fileMap.deinit();
-    fileMap.* = createSortedFileList(fileSet);
+pub fn updateSortedFileList(fileSet: uwa.FileSet, tui: *TuiData) !void {
+    var newMap = createSortedFileList(fileSet);
+    var fileMapIter = tui.fileMap.iterator();
+    while (fileMapIter.next()) |entry| {
+        if (newMap.contains(entry.key_ptr.*)) {
+            newMap.put(entry.key_ptr.*, entry.value_ptr.*) catch @panic("oom while handling tui");
+        }
+    }
+    newMap.sort(FileMapSortContext.init(newMap));
+    tui.fileMap.deinit();
+    tui.fileMap = newMap;
+
+    tui.filePositions.positions.deinit();
+    tui.filePositions = getFilePositions(&tui.fileMap, tui.termsize, tui.maxFileLen, null, null);
 }
 
 const Pos = struct {
-    rowsDown: usize,
-    colsRight: usize,
+    y: usize,
+    x: usize,
 };
 
-const MAX_FILE_LEN = 15;
+const FilePos = struct {
+    page: usize,
+    x: usize,
+    y: usize,
+};
+
+const FilePositionInfo = struct {
+    positions: std.ArrayList(?FilePos),
+    totalPages: usize,
+    maxFileWidth: usize,
+};
+
 const SPACE_BTW_FILE_HEARTBEAT = 3;
 const HEARTBEAT_SPACE = 3;
-const SPACING = 5;
-const TOTAL_ROW_LEN = MAX_FILE_LEN + SPACE_BTW_FILE_HEARTBEAT + HEARTBEAT_SPACE + SPACING;
-fn getNumRowsAndCols(map: *FileHeartbeatMap, termsize: TermSz) TermSz {
-    const maxFileCols = termsize.width / TOTAL_ROW_LEN;
-    if (maxFileCols == 0) return TermSz{ .height = 0, .width = 0 };
-    const maxFileRows = (map.count() + maxFileCols - 1) / maxFileCols;
-    return TermSz{
-        .height = @intCast(maxFileRows),
-        .width = @intCast(maxFileCols),
-    };
+const MANDATORY_SPACE = SPACE_BTW_FILE_HEARTBEAT + HEARTBEAT_SPACE + 1;
+fn getFilePositions(
+    fileMap: *const FileHeartbeatMap,
+    termSize: TermSz,
+    maxFileLen: usize,
+    offsetDown: ?usize,
+    spacing: ?usize,
+) FilePositionInfo {
+    const offset = offsetDown orelse 2;
+    const space = spacing orelse 5;
+    _ = space;
+
+    var filePositions = std.ArrayList(?FilePos).init(uwa.alloc);
+
+    var longestFileLength: usize = 0;
+    var totalFileLength: usize = 0;
+    const keys = fileMap.keys();
+    for (keys) |file| {
+        totalFileLength += file.len;
+        if (file.len > longestFileLength) {
+            longestFileLength = file.len;
+        }
+    }
+    const longestFileWidth: usize = @min(longestFileLength + MANDATORY_SPACE, maxFileLen);
+    if (longestFileWidth == 0 or totalFileLength == 0 or termSize.width == 0 or termSize.height == 0) {
+        for (keys) |_| {
+            filePositions.append(null) catch @panic("oom while handling tui");
+        }
+        return FilePositionInfo{ .positions = filePositions, .totalPages = 0, .maxFileWidth = longestFileWidth };
+    }
+    const cols = termSize.width / (longestFileWidth);
+    if (cols == 0) {
+        for (keys) |_| {
+            filePositions.append(null) catch @panic("oom while handling tui");
+        }
+        return FilePositionInfo{ .positions = filePositions, .totalPages = 0, .maxFileWidth = longestFileWidth };
+    }
+    const rows = keys.len / cols + 1;
+    const pages = rows / (termSize.height - offset) + 1;
+
+    var currentRow = offset;
+    var currentCol: usize = 0;
+    var currentPage: usize = 0;
+    for (keys) |_| {
+        const pos = FilePos{
+            .y = currentRow,
+            .x = currentCol,
+            .page = currentPage,
+        };
+        currentRow += 1;
+        if (currentRow >= termSize.height) {
+            currentRow = offset;
+            currentCol += longestFileWidth;
+        }
+        uwa.log.debug("row: {d} col: {d} page: {d}", .{ currentRow, currentCol, currentPage });
+        if (currentCol + longestFileWidth >= termSize.width) {
+            currentCol = 0;
+            currentPage += 1;
+        }
+        filePositions.append(pos) catch @panic("oom while handling tui");
+    }
+    return FilePositionInfo{ .positions = filePositions, .totalPages = pages, .maxFileWidth = longestFileWidth };
 }
 
-fn getPosToPrintFile(tui: *TuiData, file: []const u8, rowscols: TermSz, offsetDown: usize) ?Pos {
-    const fileIndex = tui.fileMap.getIndex(file).?;
-    if (fileIndex >= rowscols.width * rowscols.height) return null;
-
-    const row = (fileIndex / rowscols.width) + offsetDown;
-    const col = (fileIndex % rowscols.width);
-
-    return Pos{
-        .rowsDown = row,
-        .colsRight = col * TOTAL_ROW_LEN,
-    };
+fn getPosToPrintFile(tui: *TuiData, file: []const u8) ?FilePos {
+    const keys = tui.fileMap.keys();
+    // keys are sorted so we can do a binary search
+    const fileIndex = std.sort.binarySearch([]const u8, file, keys, FileMapSortContext, FileMapSortContext.compareFn).?;
+    return tui.filePositions.positions.items[fileIndex];
 }
 
 pub fn setupFileArea(tui: *TuiData) !void {
@@ -217,8 +301,8 @@ pub fn printEntireMap(tui: *TuiData) !void {
     const a = tui.ansi;
 
     try setupFileArea(tui);
-    try uwa.stdout.print("{s}{s}", .{ tui.ansi.BOLD, a.COLORFUL_UWAKA });
-    if (tui.rowscols.height == 0 or tui.rowscols.width == 0) {
+    try uwa.stdout.print("{s}{s} – Page ({d}/{d})", .{ tui.ansi.BOLD, a.COLORFUL_UWAKA, tui.page + 1, tui.filePositions.totalPages });
+    if (tui.termsize.height < 10 or tui.termsize.width < 10) {
         return;
     }
     var iter = tui.fileMap.iterator();
@@ -229,18 +313,19 @@ pub fn printEntireMap(tui: *TuiData) !void {
 
 pub fn printFileLine(tui: *TuiData, file: []const u8, heartbeats: u32) !void {
     var a = tui.ansi;
-    const posOrNull = getPosToPrintFile(tui, file, tui.rowscols, 2);
+    const posOrNull = getPosToPrintFile(tui, file);
     if (posOrNull) |pos| {
-        if (pos.rowsDown > 0) {
-            try uwa.stdout.print("{s}", .{a.cursorDownB(pos.rowsDown)});
+        if (pos.page != tui.page) return; // skip if not on the current page
+        if (pos.y > 0) {
+            try uwa.stdout.print("{s}", .{a.cursorDownB(pos.y)});
         }
-        try uwa.stdout.print("{s}{s: <15} - {d}", .{
-            a.cursorToCol(pos.colsRight),
-            file[0..@min(file.len, MAX_FILE_LEN)],
+        try uwa.stdout.print("{s}{s} - {d}", .{
+            a.cursorToCol(pos.x),
+            file[0..@min(file.len, tui.filePositions.maxFileWidth - MANDATORY_SPACE)],
             heartbeats,
         });
-        if (pos.rowsDown > 0) {
-            try uwa.stdout.print("{s}", .{a.cursorUpB(pos.rowsDown)});
+        if (pos.y > 0) {
+            try uwa.stdout.print("{s}", .{a.cursorUpB(pos.y)});
         }
     }
 }
@@ -275,27 +360,83 @@ pub fn getTermSz(tty: std.posix.fd_t) !TermSz {
     }
 }
 
+fn updateTuiSize(tui: *TuiData, newTermSz: TermSz) void {
+    tui.termsize = newTermSz;
+    tui.maxFileLen = newTermSz.width / 2 - 1;
+    tui.filePositions.positions.deinit();
+    tui.filePositions = getFilePositions(&tui.fileMap, newTermSz, tui.maxFileLen, null, null);
+}
+
+const InputEvent = enum {
+    NextPage,
+    PrevPage,
+    Other,
+};
+
+fn monitorStdIn(queue: *uwa.Queue(InputEvent)) !void {
+    const stdin = std.io.getStdIn();
+    var buffer: [1024]u8 = undefined;
+    while (true) {
+        const n = try stdin.read(&buffer);
+        const key = buffer[0];
+        if (n == 1) {
+            try queue.push(InputEvent.NextPage);
+            continue;
+        }
+        switch (key) {
+            'b' => {
+                try queue.push(InputEvent.PrevPage);
+            },
+            else => {
+                try queue.push(InputEvent.Other);
+            },
+        }
+    }
+}
+
 pub fn updateTui(tui: *TuiData, options: *uwa.Options, event: ?uwa.Event, isHeartbeat: bool) !void {
     const newTermSz = try getTermSz(std.io.getStdOut().handle);
-    const maxRowsCols = getNumRowsAndCols(&tui.fileMap, newTermSz);
-    if (maxRowsCols.height != tui.rowscols.height or maxRowsCols.width != tui.rowscols.width) {
-        tui.rowscols = maxRowsCols;
+
+    const in = tui.inputs.pop();
+    if (in) |ev| {
+        switch (ev) {
+            InputEvent.NextPage => {
+                tui.page += 1;
+                if (tui.page > tui.filePositions.totalPages - 1) tui.page = 0;
+            },
+            InputEvent.PrevPage => {
+                if (tui.page == 0) {
+                    tui.page = tui.filePositions.totalPages - 1;
+                } else {
+                    tui.page -= 1;
+                }
+            },
+            InputEvent.Other => {},
+        }
+        try uwa.stdout.print("{s}", .{tui.ansi.cursorUp(1)});
+        try printEntireMap(tui);
+    }
+
+    if ((newTermSz.height != tui.termsize.height or newTermSz.width != tui.termsize.width)) {
+        uwa.log.debug("updating tui size", .{});
+        updateTuiSize(tui, newTermSz);
         try printEntireMap(tui);
     }
     if (event) |e| {
         var requiresRefresh = false;
         switch (e.etype) {
             uwa.EventType.FileCreate => {
-                try tui.fileMap.put(e.fileName, 1);
                 requiresRefresh = true;
             },
             uwa.EventType.FileDelete => {
-                requiresRefresh = tui.fileMap.orderedRemove(e.fileName);
+                requiresRefresh = true;
             },
             else => {},
         }
-        try updateSortedFileList(options.fileSet, &tui.fileMap);
-        try printEntireMap(tui);
+        if (requiresRefresh) {
+            try updateSortedFileList(options.fileSet, tui);
+            try printEntireMap(tui);
+        }
 
         if (!isHeartbeat) return;
         try tui.fileMap.put(e.fileName, tui.fileMap.get(e.fileName).? + 1);
