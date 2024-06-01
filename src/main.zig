@@ -129,7 +129,7 @@ pub fn main() !void {
         uwa.stdout = std.io.getStdOut().writer();
         uwa.stderr = std.io.getStdErr().writer();
     }
-    uwa.log.info("\n\n\n\n\nRunning on {s}", .{@tagName(uwa.osTag)});
+    uwa.log.debug("\n\n\n\n\nRunning on {s}", .{@tagName(uwa.osTag)});
 
     var options = try cli.parseArgs(uwa.alloc);
     uwa.log.debug("Wakatime cli path: {s}", .{options.wakatimeCliPath});
