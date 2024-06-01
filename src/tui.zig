@@ -129,7 +129,7 @@ pub const TuiData = struct {
     pub fn init(options: *uwa.Options) !*TuiData {
         const fileMap = createSortedFileList(options.fileSet);
         const termsize = try getTermSz(std.io.getStdOut().handle);
-        const maxFileLen = termsize.width / 2;
+        const maxFileLen = termsize.width / 2 - 1;
         const inputs = uwa.Queue(InputEvent).init(uwa.alloc);
         tg = TuiData{
             .fileMap = fileMap,
@@ -362,7 +362,7 @@ pub fn getTermSz(tty: std.posix.fd_t) !TermSz {
 
 fn updateTuiSize(tui: *TuiData, newTermSz: TermSz) void {
     tui.termsize = newTermSz;
-    tui.maxFileLen = newTermSz.width / 2;
+    tui.maxFileLen = newTermSz.width / 2 - 1;
     tui.filePositions.positions.deinit();
     tui.filePositions = getFilePositions(&tui.fileMap, newTermSz, tui.maxFileLen, null, null);
 }
