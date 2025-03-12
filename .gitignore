@@ -1,5 +1,6 @@
 # Zig
 zig-cache
+.zig-cache
 zig-out
 
 # Wakatime CLI
