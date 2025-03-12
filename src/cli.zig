@@ -74,7 +74,7 @@ pub fn parseArgs(allocator: std.mem.Allocator) !uwa.Options {
     var args = try std.process.argsWithAllocator(arena.allocator());
     defer args.deinit();
 
-    const argMap = std.ComptimeStringMap(Args, &.{
+    const argMap = std.StaticStringMap(Args).initComptime(&.{
         .{ "--help", Args.help },
         .{ "-h", Args.help },
         .{ "--wakatime-cli-path", Args.wakatimeCliPath },
