@@ -167,8 +167,7 @@ fn inotifyToUwakaEvent(event: inotifyEvent, context: *Context) ?EventTypeInfo {
 }
 
 pub fn nextEvent(context: *Context, options: *uwa.Options) !uwa.Event {
-    if (context.eventQueue.items.len > 0) {
-        const event = context.eventQueue.pop();
+    if (context.eventQueue.pop()) |event| {
         return event;
     }
 

@@ -3,11 +3,11 @@ const std = @import("std");
 const uwa = @import("mix.zig");
 const cli = @import("cli.zig");
 
-pub const std_options = .{
-    .logFn = myLogFn,
+pub const std_options: std.Options = .{
+    .logFn = uwaLog,
 };
 
-pub fn myLogFn(
+pub fn uwaLog(
     comptime level: std.log.Level,
     comptime scope: @TypeOf(.EnumLiteral),
     comptime format: []const u8,

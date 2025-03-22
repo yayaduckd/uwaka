@@ -92,7 +92,7 @@ pub fn Queue(comptime T: type) type {
             }
             self.mutex.lock();
             defer self.mutex.unlock();
-            return self.contents.popOrNull();
+            return self.contents.pop();
         }
     };
 }

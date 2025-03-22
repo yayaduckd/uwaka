@@ -163,8 +163,8 @@ const FileMapSortContext = struct {
         return .{ .fileMap = map };
     }
 
-    pub fn compareFn(t: type, a: []const u8, b: []const u8) std.math.Order {
-        _ = t;
+    pub fn compareFn(a: []const u8, b: []const u8) std.math.Order {
+        // _ = t;
         return std.mem.order(u8, a, b);
     }
 
@@ -288,7 +288,7 @@ fn getFilePositions(
 fn getPosToPrintFile(tui: *TuiData, file: []const u8) ?FilePos {
     const keys = tui.fileMap.keys();
     // keys are sorted so we can do a binary search
-    const fileIndex = std.sort.binarySearch([]const u8, file, keys, FileMapSortContext, FileMapSortContext.compareFn).?;
+    const fileIndex = std.sort.binarySearch([]const u8, keys, file, FileMapSortContext.compareFn).?;
     return tui.filePositions.positions.items[fileIndex];
 }
 
@@ -337,7 +337,7 @@ const TermSz = struct {
 
 pub fn getTermSz(tty: std.posix.fd_t) !TermSz {
     if (uwa.osTag != .windows) {
-        var winsz = std.posix.winsize{ .ws_col = 0, .ws_row = 0, .ws_xpixel = 0, .ws_ypixel = 0 };
+        var winsz = std.posix.winsize{ .col = 0, .row = 0, .xpixel = 0, .ypixel = 0 };
         const rv = blk: {
             if (uwa.osTag == .linux) {
                 break :blk std.os.linux.ioctl(tty, std.os.linux.T.IOCGWINSZ, @intFromPtr(&winsz));
@@ -347,7 +347,7 @@ pub fn getTermSz(tty: std.posix.fd_t) !TermSz {
         };
         const err = std.posix.errno(rv);
         if (rv == 0) {
-            return TermSz{ .height = winsz.ws_row, .width = winsz.ws_col };
+            return TermSz{ .height = winsz.row, .width = winsz.col };
         } else {
             return std.posix.unexpectedErrno(err);
         }
