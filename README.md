@@ -1,4 +1,4 @@
-Zig Version: `0.12.0`
+Zig Version: `0.14.0`
 
 Currently only Linux is supported efficiently, but uwaka is still usable on systems with POSIX-compatible filesystems including Windows and macOS.
 
@@ -31,7 +31,7 @@ Tested with `wakatime-cli` version `1.90.0`.
 
 # Compiling
 
-- Acquire and install version 0.12.0 of [Zig](https://ziglang.org/).
+- Acquire and install version 0.14.0 of [Zig](https://ziglang.org/).
 - Run `zig build --release=fast` in the root directory of the project.
 - The compiled binary will be in `zig-out/bin/`.
 
