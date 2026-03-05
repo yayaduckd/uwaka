@@ -8,7 +8,7 @@ pkgbase = uwaka-git
 	arch = i686
 	license = MIT
 	makedepends = git
-	makedepends = zig=0.12.0
+	makedepends = zig=0.15.2
 	provides = uwaka
 	conflicts = uwaka
 	source = git+https://github.com/yayaduckd/uwaka
