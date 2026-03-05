@@ -2,11 +2,11 @@ const uwa = @import("mix.zig");
 
 const std = @import("std");
 
-pub fn rebuildFileList(options: *uwa.Options, context: ?*uwa.Context) !uwa.Context {
+pub fn rebuildFileList(options: *uwa.Options, context: ?*uwa.os.Context) !uwa.os.Context {
 
     // clear fileset
     options.fileSet.deinit();
-    options.fileSet = try uwa.getFilesinGitReposAndFolders(options);
+    options.fileSet = try uwa.files.getFilesinGitReposAndFolders(options);
 
     // add all explicitly added files
     var explicitFileIterator = options.explicitFiles.iterator();
@@ -16,17 +16,17 @@ pub fn rebuildFileList(options: *uwa.Options, context: ?*uwa.Context) !uwa.Conte
 
     if (context) |ctx| {
         // clear the context
-        uwa.deInitWatching(ctx);
+        uwa.os.deInitWatching(ctx);
     }
     // re-init the context
-    const ctx = try uwa.initWatching(options);
+    const ctx = try uwa.os.initWatching(options);
     return ctx;
 }
 
 var lastEventTime: i64 = 0;
 var lastHeartbeat: i64 = 0;
 const DEBOUNCE_TIME = 5000; // 5 seconds
-pub fn handleEvent(event: uwa.Event, options: *uwa.Options, context: *uwa.Context) !bool {
+pub fn handleEvent(event: uwa.Event, options: *uwa.Options, context: *uwa.os.Context) !bool {
     var heartbeatSent = false;
     switch (event.etype) {
         uwa.EventType.FileChange => {
@@ -43,7 +43,7 @@ pub fn handleEvent(event: uwa.Event, options: *uwa.Options, context: *uwa.Contex
                 context.* = try rebuildFileList(options, context);
             }
 
-            heartbeatSent = try uwa.sendHeartbeat(lastHeartbeat, options, event);
+            heartbeatSent = try uwa.main.sendHeartbeat(lastHeartbeat, options, event);
             if (heartbeatSent) {
                 lastHeartbeat = currentTime;
             }
@@ -53,12 +53,12 @@ pub fn handleEvent(event: uwa.Event, options: *uwa.Options, context: *uwa.Contex
             try options.fileSet.insert(event.fileName);
         },
         uwa.EventType.FileDelete => {
-            try uwa.assertIntegrity(options.fileSet.contains(event.fileName));
+            try uwa.files.assertIntegrity(options.fileSet.contains(event.fileName));
             options.fileSet.remove(event.fileName);
             options.explicitFiles.remove(event.fileName);
         },
         else => {
-            uwa.log.err("Unknown event type: {}", .{event.etype});
+            uwa.log.err("Unknown event type: {t}", .{event.etype});
         },
     }
     return heartbeatSent;
@@ -71,18 +71,20 @@ pub fn Queue(comptime T: type) type {
 
         contents: std.ArrayList(T),
         mutex: std.Thread.Mutex,
+        alloc: Allocator,
         const Allocator = std.mem.Allocator;
 
-        pub fn init(alloc: Allocator) Queue(T) {
+        pub fn init(a: Allocator) Queue(T) {
             return Self{
-                .contents = std.ArrayList(T).init(alloc),
+                .alloc = a,
+                .contents = .empty,
                 .mutex = std.Thread.Mutex{},
             };
         }
 
         pub fn push(self: *Queue(T), event: T) Allocator.Error!void {
             self.mutex.lock();
-            try self.contents.append(event);
+            try self.contents.append(self.alloc, event);
             self.mutex.unlock();
         }
 
@@ -92,7 +94,8 @@ pub fn Queue(comptime T: type) type {
             }
             self.mutex.lock();
             defer self.mutex.unlock();
-            return self.contents.popOrNull();
+            // return self.contents.pop();
+            return self.contents.orderedRemove(0);
         }
     };
 }

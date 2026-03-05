@@ -123,14 +123,14 @@ pub const TuiData = struct {
     maxFileLen: usize,
     page: usize = 0,
     filePositions: FilePositionInfo,
-    inputs: uwa.Queue(InputEvent),
+    inputs: uwa.events.Queue(InputEvent),
     alloc: std.mem.Allocator = uwa.alloc,
 
     pub fn init(options: *uwa.Options) !*TuiData {
         const fileMap = createSortedFileList(options.fileSet);
-        const termsize = try getTermSz(std.io.getStdOut().handle);
+        const termsize = try getTermSz(std.fs.File.stdout().handle);
         const maxFileLen = termsize.width / 2 - 1;
-        const inputs = uwa.Queue(InputEvent).init(uwa.alloc);
+        const inputs = uwa.events.Queue(InputEvent).init(uwa.alloc);
         tg = TuiData{
             .fileMap = fileMap,
             .ansi = Ansi.init(uwa.alloc),
@@ -163,8 +163,7 @@ const FileMapSortContext = struct {
         return .{ .fileMap = map };
     }
 
-    pub fn compareFn(t: type, a: []const u8, b: []const u8) std.math.Order {
-        _ = t;
+    pub fn compareFn(a: []const u8, b: []const u8) std.math.Order {
         return std.mem.order(u8, a, b);
     }
 
@@ -175,7 +174,7 @@ const FileMapSortContext = struct {
     }
 };
 
-pub fn createSortedFileList(fileSet: uwa.FileSet) FileHeartbeatMap {
+pub fn createSortedFileList(fileSet: uwa.files.FileSet) FileHeartbeatMap {
     var fileMap = FileHeartbeatMap.init(uwa.alloc);
     var fileSetIter = fileSet.iterator();
     while (fileSetIter.next()) |file| {
@@ -186,7 +185,7 @@ pub fn createSortedFileList(fileSet: uwa.FileSet) FileHeartbeatMap {
     return fileMap;
 }
 
-pub fn updateSortedFileList(fileSet: uwa.FileSet, tui: *TuiData) !void {
+pub fn updateSortedFileList(fileSet: uwa.files.FileSet, tui: *TuiData) !void {
     var newMap = createSortedFileList(fileSet);
     var fileMapIter = tui.fileMap.iterator();
     while (fileMapIter.next()) |entry| {
@@ -198,7 +197,7 @@ pub fn updateSortedFileList(fileSet: uwa.FileSet, tui: *TuiData) !void {
     tui.fileMap.deinit();
     tui.fileMap = newMap;
 
-    tui.filePositions.positions.deinit();
+    tui.filePositions.positions.deinit(uwa.alloc);
     tui.filePositions = getFilePositions(&tui.fileMap, tui.termsize, tui.maxFileLen, null, null);
 }
 
@@ -233,7 +232,7 @@ fn getFilePositions(
     const space = spacing orelse 5;
     _ = space;
 
-    var filePositions = std.ArrayList(?FilePos).init(uwa.alloc);
+    var filePositions: std.ArrayList(?FilePos) = .empty;
 
     var longestFileLength: usize = 0;
     var totalFileLength: usize = 0;
@@ -247,14 +246,14 @@ fn getFilePositions(
     const longestFileWidth: usize = @min(longestFileLength + MANDATORY_SPACE, maxFileLen);
     if (longestFileWidth == 0 or totalFileLength == 0 or termSize.width == 0 or termSize.height == 0) {
         for (keys) |_| {
-            filePositions.append(null) catch @panic("oom while handling tui");
+            filePositions.append(uwa.alloc, null) catch @panic("oom while handling tui");
         }
         return FilePositionInfo{ .positions = filePositions, .totalPages = 0, .maxFileWidth = longestFileWidth };
     }
     const cols = termSize.width / (longestFileWidth);
     if (cols == 0) {
         for (keys) |_| {
-            filePositions.append(null) catch @panic("oom while handling tui");
+            filePositions.append(uwa.alloc, null) catch @panic("oom while handling tui");
         }
         return FilePositionInfo{ .positions = filePositions, .totalPages = 0, .maxFileWidth = longestFileWidth };
     }
@@ -280,7 +279,7 @@ fn getFilePositions(
             currentCol = 0;
             currentPage += 1;
         }
-        filePositions.append(pos) catch @panic("oom while handling tui");
+        filePositions.append(uwa.alloc, pos) catch @panic("oom while handling tui");
     }
     return FilePositionInfo{ .positions = filePositions, .totalPages = pages, .maxFileWidth = longestFileWidth };
 }
@@ -288,7 +287,7 @@ fn getFilePositions(
 fn getPosToPrintFile(tui: *TuiData, file: []const u8) ?FilePos {
     const keys = tui.fileMap.keys();
     // keys are sorted so we can do a binary search
-    const fileIndex = std.sort.binarySearch([]const u8, file, keys, FileMapSortContext, FileMapSortContext.compareFn).?;
+    const fileIndex = std.sort.binarySearch([]const u8, keys, file, FileMapSortContext.compareFn).?;
     return tui.filePositions.positions.items[fileIndex];
 }
 
@@ -337,7 +336,7 @@ const TermSz = struct {
 
 pub fn getTermSz(tty: std.posix.fd_t) !TermSz {
     if (uwa.osTag != .windows) {
-        var winsz = std.posix.winsize{ .ws_col = 0, .ws_row = 0, .ws_xpixel = 0, .ws_ypixel = 0 };
+        var winsz = std.posix.winsize{ .col = 0, .row = 0, .xpixel = 0, .ypixel = 0 };
         const rv = blk: {
             if (uwa.osTag == .linux) {
                 break :blk std.os.linux.ioctl(tty, std.os.linux.T.IOCGWINSZ, @intFromPtr(&winsz));
@@ -347,7 +346,7 @@ pub fn getTermSz(tty: std.posix.fd_t) !TermSz {
         };
         const err = std.posix.errno(rv);
         if (rv == 0) {
-            return TermSz{ .height = winsz.ws_row, .width = winsz.ws_col };
+            return TermSz{ .height = winsz.row, .width = winsz.col };
         } else {
             return std.posix.unexpectedErrno(err);
         }
@@ -363,7 +362,7 @@ pub fn getTermSz(tty: std.posix.fd_t) !TermSz {
 fn updateTuiSize(tui: *TuiData, newTermSz: TermSz) void {
     tui.termsize = newTermSz;
     tui.maxFileLen = newTermSz.width / 2 - 1;
-    tui.filePositions.positions.deinit();
+    tui.filePositions.positions.deinit(uwa.alloc);
     tui.filePositions = getFilePositions(&tui.fileMap, newTermSz, tui.maxFileLen, null, null);
 }
 
@@ -373,8 +372,8 @@ const InputEvent = enum {
     Other,
 };
 
-fn monitorStdIn(queue: *uwa.Queue(InputEvent)) !void {
-    const stdin = std.io.getStdIn();
+fn monitorStdIn(queue: *uwa.events.Queue(InputEvent)) !void {
+    const stdin = std.fs.File.stdin();
     var buffer: [1024]u8 = undefined;
     while (true) {
         const n = try stdin.read(&buffer);
@@ -395,7 +394,7 @@ fn monitorStdIn(queue: *uwa.Queue(InputEvent)) !void {
 }
 
 pub fn updateTui(tui: *TuiData, options: *uwa.Options, event: ?uwa.Event, isHeartbeat: bool) !void {
-    const newTermSz = try getTermSz(std.io.getStdOut().handle);
+    const newTermSz = try getTermSz(std.fs.File.stdout().handle);
 
     const in = tui.inputs.pop();
     if (in) |ev| {

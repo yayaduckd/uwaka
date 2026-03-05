@@ -18,16 +18,16 @@ pub const Context = struct {
     watchedFiles: std.AutoHashMap(i32, []const u8),
     eventQueue: std.ArrayList(uwa.Event),
     moveCookies: std.AutoHashMap(u32, i64),
-    createdFiles: uwa.FileSet,
+    createdFiles: uwa.files.FileSet,
 };
 
 pub fn initWatching(options: *uwa.Options) !Context {
     var context = Context{
         .inotify_fd = 0,
         .watchedFiles = std.AutoHashMap(i32, []const u8).init(uwa.alloc),
-        .eventQueue = std.ArrayList(uwa.Event).init(uwa.alloc),
+        .eventQueue = .empty,
         .moveCookies = std.AutoHashMap(u32, i64).init(uwa.alloc),
-        .createdFiles = uwa.FileSet.init(uwa.alloc),
+        .createdFiles = uwa.files.FileSet.init(uwa.alloc),
     };
 
     // init inotify
@@ -90,7 +90,7 @@ pub fn initWatching(options: *uwa.Options) !Context {
         }
     }
 
-    context.eventQueue = std.ArrayList(uwa.Event).init(uwa.alloc);
+    context.eventQueue = .empty;
 
     return context;
 }
@@ -99,7 +99,7 @@ pub fn deInitWatching(context: *Context) void {
     if (context.inotify_fd != 0) {
         std.posix.close(context.inotify_fd);
     }
-    context.eventQueue.deinit();
+    context.eventQueue.deinit(uwa.alloc);
     context.watchedFiles.deinit();
     context.moveCookies.deinit();
     context.createdFiles.deinit();
@@ -169,7 +169,7 @@ fn inotifyToUwakaEvent(event: inotifyEvent, context: *Context) ?EventTypeInfo {
 pub fn nextEvent(context: *Context, options: *uwa.Options) !uwa.Event {
     if (context.eventQueue.items.len > 0) {
         const event = context.eventQueue.pop();
-        return event;
+        return event.?;
     }
 
     // otherwise, read from inotify fd
@@ -228,16 +228,22 @@ pub fn nextEvent(context: *Context, options: *uwa.Options) !uwa.Event {
                 try context.createdFiles.insert(joinedPath);
                 fileName = context.createdFiles.get(joinedPath).?;
                 const mask: u32 = if (etypeinfo.isDir) directoryWatchMask else fileWatchMask;
-                uwa.log.debug("adding watch for {s} with mask {d}", .{ fileName, mask });
-                const wd = try std.posix.inotify_add_watch(context.inotify_fd, fileName, mask);
-                try context.watchedFiles.put(wd, fileName);
+                const wd: ?i32 = std.posix.inotify_add_watch(context.inotify_fd, fileName, mask) catch |e| if (e == std.posix.INotifyAddWatchError.FileNotFound) null else return e;
+                // nvim 4913 moment
+
+                if (wd) |watch_desc| {
+                    uwa.log.debug("adding watch for {s} with mask {d}", .{ fileName, mask });
+                    try context.watchedFiles.put(watch_desc, fileName);
+                } else {
+                    context.createdFiles.remove(fileName);
+                }
             }
             const uwakaEvent = uwa.Event{
                 .etype = etypeinfo.etype,
                 .fileName = fileName,
             };
             if (!etypeinfo.isDir) {
-                try context.eventQueue.append(uwakaEvent);
+                try context.eventQueue.append(uwa.alloc, uwakaEvent);
             }
         } else {
             continue;

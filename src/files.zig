@@ -26,7 +26,7 @@ pub fn getFilesInGitRepo(repoPath: []const u8) !FileSet {
 
     const cwd = std.fs.cwd();
     // split by newline
-    var lines = std.mem.split(u8, gitFiles, "\n");
+    var lines = std.mem.splitScalar(u8, gitFiles, '\n');
     while (lines.next()) |line| {
         if (line.len == 0) {
             continue;
@@ -68,10 +68,10 @@ pub const FileSet = struct {
     pub const Iterator = BufSetHashMap.KeyIterator;
 
     bufSet: BufSet,
-    allocator: Allocator,
+    alloc: Allocator,
 
     pub fn init(a: Allocator) FileSet {
-        return .{ .bufSet = BufSet.init(a), .allocator = a };
+        return .{ .bufSet = BufSet.init(a), .alloc = a };
     }
 
     /// Free a BufSet along with all stored keys.
@@ -84,16 +84,16 @@ pub const FileSet = struct {
     /// copied, so the caller may delete or reuse the
     /// passed string immediately.
     pub fn insert(self: *FileSet, value: []const u8) !void {
-        const resolvedPath = try std.fs.path.resolve(self.allocator, &.{value});
+        const resolvedPath = try std.fs.path.resolve(self.alloc, &.{value});
         try self.bufSet.insert(resolvedPath);
-        self.allocator.free(resolvedPath);
+        self.alloc.free(resolvedPath);
     }
 
     pub fn get(self: *FileSet, value: []const u8) ?[]const u8 {
-        const resolvedPath = std.fs.path.resolve(self.allocator, &.{value}) catch {
+        const resolvedPath = std.fs.path.resolve(self.alloc, &.{value}) catch {
             return null;
         };
-        defer self.allocator.free(resolvedPath);
+        defer self.alloc.free(resolvedPath);
         const result = self.bufSet.hash_map.getEntry(resolvedPath);
         if (result) |entry| {
             return entry.key_ptr.*;

@@ -59,8 +59,8 @@ fn printCliError(comptime format: []const u8, args: anytype) void {
 
 pub fn parseArgs(allocator: std.mem.Allocator) !uwa.Options {
     var options = uwa.Options{
-        .explicitFiles = uwa.FileSet.init(allocator),
-        .fileSet = uwa.FileSet.init(allocator),
+        .explicitFiles = uwa.files.FileSet.init(allocator),
+        .fileSet = uwa.files.FileSet.init(allocator),
         .wakatimeCliPath = "",
         .editorName = "",
         .editorVersion = "",
@@ -158,11 +158,11 @@ pub fn parseArgs(allocator: std.mem.Allocator) !uwa.Options {
                             allocator.free(result.stdout);
                             allocator.free(result.stderr);
 
-                            break :blk uwa.FileSet.init(allocator);
+                            break :blk uwa.files.FileSet.init(allocator);
                         };
 
                         try options.gitRepos.?.insert(gitRepo);
-                        var gitSet = try uwa.getFilesInGitRepo(gitRepo);
+                        var gitSet = try uwa.files.getFilesInGitRepo(gitRepo);
                         var iter = gitSet.iterator();
                         while (iter.next()) |file| {
                             try options.fileSet.insert(file.*);
@@ -191,11 +191,11 @@ pub fn parseArgs(allocator: std.mem.Allocator) !uwa.Options {
             }
 
             if (isDirectory) {
-                options.explicitFolders = options.explicitFolders orelse uwa.FileSet.init(allocator);
+                options.explicitFolders = options.explicitFolders orelse uwa.files.FileSet.init(allocator);
                 try options.explicitFolders.?.insert(arg);
 
-                var filesFound = try uwa.getFilesInFolder(arg);
-                uwa.addFileSet(&options.fileSet, &filesFound);
+                var filesFound = try uwa.files.getFilesInFolder(arg);
+                uwa.files.addFileSet(&options.fileSet, &filesFound);
                 filesFound.deinit();
             } else {
                 try options.fileSet.insert(arg);

@@ -35,12 +35,11 @@ fn addTargets(targets: []std.Build.ResolvedTarget, b: *std.Build, nativeTarget: 
 
         const executableName = std.fmt.allocPrint(b.allocator, "uwaka_{s}-{s}", .{ @tagName(architecture), @tagName(os) }) catch unreachable;
 
-        const exe = b.addExecutable(.{
-            .name = executableName,
+        const exe = b.addExecutable(.{ .name = executableName, .root_module = b.createModule(.{
             .root_source_file = b.path("src/main.zig"),
             .target = target,
             .optimize = optimize,
-        });
+        }) });
         exe.root_module.addOptions("build_options", options);
         if (os != .linux and os != .windows) {
             exe.linkLibC();
@@ -70,7 +69,7 @@ pub fn build(b: *std.Build) void {
     // for restricting supported target set are available.
     const nativeTarget = b.standardTargetOptions(.{});
     const buildAllOs = b.option(bool, "build_all_os", "Build for all supported operating systems") orelse false;
-    var targets = std.ArrayList(std.Build.ResolvedTarget).init(b.allocator);
+    var targets: std.ArrayList(std.Build.ResolvedTarget) = .empty;
 
     if (buildAllOs) {
         const possibleTargets: [5][]const u8 = .{
@@ -82,14 +81,14 @@ pub fn build(b: *std.Build) void {
         };
 
         for (possibleTargets) |currentTarget| {
-            targets.append(b.resolveTargetQuery(std.Build.parseTargetQuery(.{
+            targets.append(b.allocator, b.resolveTargetQuery(std.Build.parseTargetQuery(.{
                 .arch_os_abi = currentTarget,
                 .cpu_features = null,
                 .dynamic_linker = null,
             }) catch unreachable)) catch unreachable;
         }
     } else {
-        targets.append(nativeTarget) catch unreachable;
+        targets.append(b.allocator, nativeTarget) catch unreachable;
     }
 
     const exe = addTargets(targets.items, b, nativeTarget);

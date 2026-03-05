@@ -21,32 +21,22 @@ pub const c = blk: {
     }
 };
 
-pub usingnamespace osSpecificImplementation;
-pub usingnamespace @import("main.zig");
-pub usingnamespace @import("files.zig");
-pub usingnamespace @import("events.zig");
-pub usingnamespace @import("tui.zig");
-pub usingnamespace @import("cli.zig");
+pub const os = osSpecificImplementation;
+pub const main = @import("main.zig");
+pub const files = @import("files.zig");
+pub const events = @import("events.zig");
+pub const tui = @import("tui.zig");
+pub const cli = @import("cli.zig");
 
 const uwa = @import("mix.zig");
 
 pub const NAME = "uwaka";
 pub const VERSION = "0.6.0";
 
-pub var stdout: std.fs.File.Writer = blk: {
-    if (!(osTag == .windows)) {
-        break :blk std.io.getStdOut().writer();
-    } else {
-        break :blk undefined;
-    }
-};
-pub var stderr: std.fs.File.Writer = blk: {
-    if (!(osTag == .windows)) {
-        break :blk std.io.getStdErr().writer();
-    } else {
-        break :blk undefined;
-    }
-};
+pub var stdout_writer: std.fs.File.Writer = undefined;
+pub var stderr_writer: std.fs.File.Writer = undefined;
+pub var stdout: *std.Io.Writer = undefined;
+pub var stderr: *std.Io.Writer = undefined;
 
 pub const log = std.log.default;
 
@@ -82,14 +72,14 @@ pub const Event = struct {
 };
 
 pub const Options = struct {
-    explicitFiles: uwa.FileSet, // list of files to watch
-    fileSet: uwa.FileSet, // list of files to watch
+    explicitFiles: uwa.files.FileSet, // list of files to watch
+    fileSet: uwa.files.FileSet, // list of files to watch
     wakatimeCliPath: []const u8, // path to wakatime-cli binary
     editorName: []const u8, // name of editor to pass to wakatime
     editorVersion: []const u8, // version of editor to pass to wakatime
     tuiEnabled: bool, // enable tui
-    gitRepos: ?uwa.FileSet, // git repo to watch
-    explicitFolders: ?uwa.FileSet,
+    gitRepos: ?uwa.files.FileSet, // git repo to watch
+    explicitFolders: ?uwa.files.FileSet,
 };
 
 pub var gpa = std.heap.GeneralPurposeAllocator(.{}){};
