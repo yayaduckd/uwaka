@@ -2,7 +2,7 @@ const std = @import("std");
 
 const WatchSystem = enum {
     inotify,
-    posix,
+    file_monitor,
 };
 
 fn addTargets(targets: []std.Build.ResolvedTarget, b: *std.Build, nativeTarget: std.Build.ResolvedTarget) ?*std.Build.Step.Compile {
@@ -20,20 +20,24 @@ fn addTargets(targets: []std.Build.ResolvedTarget, b: *std.Build, nativeTarget: 
 
         var options = b.addOptions();
 
+        var watchSystem = WatchSystem.file_monitor;
         if (watchSystemOverride) |ws| {
             switch (ws) {
                 WatchSystem.inotify => options.addOption(WatchSystem, "watch_system", ws),
-                WatchSystem.posix => options.addOption(WatchSystem, "watch_system", ws),
+                WatchSystem.file_monitor => options.addOption(WatchSystem, "watch_system", ws),
             }
+            watchSystem = ws;
         } else {
             if (os == .linux) {
                 options.addOption(WatchSystem, "watch_system", WatchSystem.inotify);
+                watchSystem = WatchSystem.inotify;
             } else {
-                options.addOption(WatchSystem, "watch_system", WatchSystem.posix);
+                options.addOption(WatchSystem, "watch_system", WatchSystem.file_monitor);
+                watchSystem = WatchSystem.file_monitor;
             }
         }
 
-        const executableName = std.fmt.allocPrint(b.allocator, "uwaka_{s}-{s}", .{ @tagName(architecture), @tagName(os) }) catch unreachable;
+        const executableName = std.fmt.allocPrint(b.allocator, "uwaka_{s}-{s}-{s}", .{ @tagName(architecture), @tagName(os), @tagName(watchSystem) }) catch unreachable;
 
         const exe = b.addExecutable(.{ .name = executableName, .root_module = b.createModule(.{
             .root_source_file = b.path("src/main.zig"),

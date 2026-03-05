@@ -13,19 +13,19 @@ pub fn initWatching(options: *uwa.Options) !Context {
     _ = options;
     // create the context
     return Context{
-        .eventQueue = std.ArrayList(uwa.Event).init(uwa.alloc),
+        .eventQueue = .empty,
         .lastModifiedMap = std.StringHashMap(i128).init(uwa.alloc),
     };
 }
 
 pub fn deInitWatching(context: *Context) void {
-    context.eventQueue.deinit();
+    context.eventQueue.deinit(uwa.alloc);
     context.lastModifiedMap.deinit();
 }
 
 pub fn nextEvent(context: *Context, options: *uwa.Options) !uwa.Event {
     if (context.eventQueue.items.len > 0) {
-        return context.eventQueue.pop();
+        return context.eventQueue.pop().?;
     }
     const cwd = std.fs.cwd(); // current working directory
     var numIter: usize = 0;
@@ -46,7 +46,7 @@ pub fn nextEvent(context: *Context, options: *uwa.Options) !uwa.Event {
                     };
                 }
                 uwa.log.warn("Error statting file: {}", .{err});
-                return uwa.UwakaFileError.IntegrityCompromisedError;
+                return uwa.files.UwakaFileError.IntegrityCompromisedError;
             };
 
             var lastModified = context.lastModifiedMap.get(file);
@@ -58,14 +58,14 @@ pub fn nextEvent(context: *Context, options: *uwa.Options) !uwa.Event {
             if (stat.mtime != lastModified) {
                 // file has changed
                 const event = uwa.Event{ .etype = uwa.EventType.FileChange, .fileName = file };
-                try context.eventQueue.insert(0, event);
+                try context.eventQueue.insert(uwa.alloc, 0, event);
                 try context.lastModifiedMap.put(file, stat.mtime);
             }
         }
 
         if (numIter >= 5) {
             // check for new files in repos
-            var newFiles = try uwa.getFilesinGitReposAndFolders(options);
+            var newFiles = try uwa.files.getFilesinGitReposAndFolders(options);
             var iter = newFiles.iterator();
             while (iter.next()) |file| {
                 if (options.fileSet.contains(file.*)) {
@@ -75,18 +75,18 @@ pub fn nextEvent(context: *Context, options: *uwa.Options) !uwa.Event {
                     .etype = uwa.EventType.FileCreate,
                     .fileName = try uwa.alloc.dupe(u8, file.*),
                 };
-                try context.eventQueue.insert(0, event);
+                try context.eventQueue.insert(uwa.alloc, 0, event);
             }
             newFiles.deinit();
             numIter = 0;
         }
 
         if (context.eventQueue.items.len > 0) {
-            return context.eventQueue.pop();
+            return context.eventQueue.pop().?;
         }
 
         // sleep for the polling interval
-        std.time.sleep(1000000000 * 2); // 2 seconds
+        std.Thread.sleep(1000000000 * 2); // 2 seconds
         numIter += 1;
     }
 }

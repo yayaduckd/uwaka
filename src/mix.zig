@@ -7,7 +7,7 @@ const osSpecificImplementation = blk: {
     const ws = buildOptions.@"build.WatchSystem";
     switch (buildOptions.watch_system) {
         ws.inotify => break :blk @import("linux.zig"),
-        ws.posix => break :blk @import("posix.zig"),
+        ws.file_monitor => break :blk @import("posix.zig"),
     }
 };
 
