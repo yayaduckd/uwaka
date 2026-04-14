@@ -1,0 +1,12 @@
+.{
+    .name = .uwaka,
+    .version = "0.8.1",
+    .fingerprint = 0xf451423232376fa1,
+    .minimum_zig_version = "0.15.1",
+    .dependencies = .{},
+    .paths = .{
+        "build.zig",
+        "build.zig.zon",
+        "src",
+    },
+}
